@@ -73,3 +73,21 @@ export async function increasePricesForm(formData: FormData) {
   const tagNameIncludes = formData.get("tagNameIncludes")?.toString() || undefined;
   await increasePricesGlobally({ percent, applyOn, roundToInteger, categoryIds, tagIds, categoryNameIncludes, tagNameIncludes });
 }
+
+// useFormState ile geri bildirim için state dönen sürüm
+export async function increasePricesFormAction(prevState: any, formData: FormData) {
+  const percent = Number(formData.get("percent") || 0);
+  const applyOn = (formData.get("applyOn")?.toString() as any) || "regular";
+  const roundToInteger = formData.get("roundToInteger") ? true : false;
+  const parseCsvNums = (s?: string | null) => (s ? s.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : []);
+  const categoryIds = parseCsvNums(formData.get("categoryIds")?.toString());
+  const tagIds = parseCsvNums(formData.get("tagIds")?.toString());
+  const categoryNameIncludes = formData.get("categoryNameIncludes")?.toString() || undefined;
+  const tagNameIncludes = formData.get("tagNameIncludes")?.toString() || undefined;
+  try {
+    const result = await increasePricesGlobally({ percent, applyOn, roundToInteger, categoryIds, tagIds, categoryNameIncludes, tagNameIncludes });
+    return { ok: true, ...result, percent, applyOn };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
