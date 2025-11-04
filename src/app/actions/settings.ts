@@ -26,6 +26,10 @@ export async function saveAppSettingsForm(formData: FormData) {
     applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,
     roundToInteger: formData.get("roundToInteger") ? true : false,
   };
+  // Basit validasyon: URL ise geçerli olsun
+  if (s.xml_path && (s.xml_path.startsWith("http://") || s.xml_path.startsWith("https://"))) {
+    try { new URL(s.xml_path); } catch { throw new Error("Geçersiz XML URL formatı"); }
+  }
   dbSaveApp(s);
 }
 
@@ -35,5 +39,11 @@ export async function saveWooSettingsForm(formData: FormData) {
     consumer_key: formData.get("consumer_key")?.toString() || undefined,
     consumer_secret: formData.get("consumer_secret")?.toString() || undefined,
   };
+  if (s.base_url) {
+    try { new URL(s.base_url); } catch { throw new Error("Geçersiz Base URL"); }
+    if (!s.consumer_key || !s.consumer_secret) {
+      throw new Error("Consumer Key/Secret gereklidir");
+    }
+  }
   dbSaveWoo(s);
 }

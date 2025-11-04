@@ -26,7 +26,13 @@ type SyncReport = {
   errors: { sku?: string; message: string }[];
 };
 
-const REPORT_PATH = path.join(process.cwd(), "sync-report.json");
+const REPORTS_DIR = path.join(process.cwd(), "data", "reports");
+
+async function ensureReportsDir() {
+  try {
+    await fs.mkdir(REPORTS_DIR, { recursive: true });
+  } catch {}
+}
 
 export async function previewXml(xmlPath?: string) {
   const path = xmlPath || process.env.XML_PATH || "";
@@ -144,7 +150,15 @@ export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
 
   const report: SyncReport = { created, updated, deleted, total: toImport.length, createdSkus, updatedSkus, deletedSkus, errors };
   try {
-    await fs.writeFile(REPORT_PATH, JSON.stringify(report, null, 2), "utf8");
+    await ensureReportsDir();
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const fileName = `sync-report-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+    const filePath = path.join(REPORTS_DIR, fileName);
+    await fs.writeFile(filePath, JSON.stringify(report, null, 2), "utf8");
+    // latest dosyası da güncellensin (geriye dönük kullanım için)
+    const latestPath = path.join(REPORTS_DIR, "sync-report-latest.json");
+    await fs.writeFile(latestPath, JSON.stringify(report, null, 2), "utf8");
   } catch (e) {
     console.error("Rapor yazılamadı:", e);
   }
@@ -153,7 +167,36 @@ export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
 
 export async function getLastReport(): Promise<SyncReport> {
   try {
-    const buf = await fs.readFile(REPORT_PATH, "utf8");
+    await ensureReportsDir();
+    const latestPath = path.join(REPORTS_DIR, "sync-report-latest.json");
+    const buf = await fs.readFile(latestPath, "utf8");
+    return JSON.parse(buf);
+  } catch {
+    return { created: 0, updated: 0, deleted: 0, total: 0, createdSkus: [], updatedSkus: [], deletedSkus: [], errors: [] };
+  }
+}
+
+export async function listReports(): Promise<string[]> {
+  try {
+    await ensureReportsDir();
+    const files = await fs.readdir(REPORTS_DIR);
+    return files
+      .filter((f) => f.startsWith("sync-report-") && f.endsWith(".json"))
+      .sort()
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
+export async function getReportByFile(fileName: string): Promise<SyncReport> {
+  try {
+    // Basit güvenlik: sadece beklenen pattern’e izin ver
+    if (!/^sync-report-(\d{8})-(\d{4})\.json$/.test(fileName) && fileName !== "sync-report-latest.json") {
+      throw new Error("Geçersiz dosya adı");
+    }
+    const filePath = path.join(REPORTS_DIR, fileName);
+    const buf = await fs.readFile(filePath, "utf8");
     return JSON.parse(buf);
   } catch {
     return { created: 0, updated: 0, deleted: 0, total: 0, createdSkus: [], updatedSkus: [], deletedSkus: [], errors: [] };

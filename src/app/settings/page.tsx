@@ -13,7 +13,7 @@ export default async function SettingsPage() {
           <form action={saveAppSettingsForm} className="space-y-3">
             <div>
               <label className="text-sm">XML Path veya URL</label>
-              <input name="xml_path" defaultValue={app.xml_path || ""} className="mt-1 w-full border rounded px-2 py-1" />
+              <input name="xml_path" type="url" defaultValue={app.xml_path || ""} placeholder="http://... veya C:\\..." className="mt-1 w-full border rounded px-2 py-1" />
             </div>
             <div className="flex items-center gap-2">
               <input type="checkbox" name="onlyCreateNew" defaultChecked={!!app.onlyCreateNew} />
@@ -50,7 +50,7 @@ export default async function SettingsPage() {
           <form action={saveWooSettingsForm} className="space-y-3">
             <div>
               <label className="text-sm">Base URL</label>
-              <input name="base_url" defaultValue={woo.base_url || process.env.WC_API_URL || ""} className="mt-1 w-full border rounded px-2 py-1" />
+              <input name="base_url" type="url" defaultValue={woo.base_url || process.env.WC_API_URL || ""} placeholder="https://site.com/wp-json/wc/v3" className="mt-1 w-full border rounded px-2 py-1" />
             </div>
             <div>
               <label className="text-sm">Consumer Key</label>

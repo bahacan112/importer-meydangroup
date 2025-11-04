@@ -1,4 +1,4 @@
-import { getLastReport } from "../actions/sync";
+import { getLastReport, listReports, getReportByFile } from "../actions/sync";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -16,14 +16,26 @@ type Report = {
   errors: { sku?: string; message: string }[];
 };
 
-export default async function AnalysisPage() {
-  const report = await getLastReport();
+export default async function AnalysisPage({ searchParams }: { searchParams?: { file?: string } }) {
+  const files = await listReports();
+  const selected = searchParams?.file || files[0] || "sync-report-latest.json";
+  const report = selected ? await getReportByFile(selected) : await getLastReport();
   return (
     <Shell>
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">İçe Aktarım Analizi</h1>
-        <Link href="/dashboard"><Button variant="secondary">Dashboard’a Dön</Button></Link>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard"><Button variant="secondary">Dashboard’a Dön</Button></Link>
+          <div className="flex items-center gap-2">
+            <label className="text-sm">Rapor Seç</label>
+            <select className="border rounded h-9 px-2" defaultValue={selected} onChange={(e) => location.href = `/analysis?file=${encodeURIComponent(e.target.value)}`}>
+              {files.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
       <Card className="p-4">
         {report ? (

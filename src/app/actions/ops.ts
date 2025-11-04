@@ -5,6 +5,10 @@ export type PriceOpsOptions = {
   percent: number; // e.g. 20
   applyOn?: "regular" | "sale" | "both";
   roundToInteger?: boolean;
+  categoryIds?: number[];
+  tagIds?: number[];
+  categoryNameIncludes?: string; // basit isim filtreleme
+  tagNameIncludes?: string;
 };
 
 export async function increasePricesGlobally(options: PriceOpsOptions) {
@@ -22,6 +26,23 @@ export async function increasePricesGlobally(options: PriceOpsOptions) {
   const products = await listAllProducts();
   let updated = 0;
   for (const p of products) {
+    // Kategori/tag filtreleri
+    if (options.categoryIds && options.categoryIds.length) {
+      const ids = (p.categories || []).map((c: any) => c.id);
+      if (!ids.some((id: number) => options.categoryIds!.includes(id))) continue;
+    }
+    if (options.tagIds && options.tagIds.length) {
+      const ids = (((p as any).tags) || []).map((t: any) => t.id);
+      if (!ids.some((id: number) => options.tagIds!.includes(id))) continue;
+    }
+    if (options.categoryNameIncludes) {
+      const names = (p.categories || []).map((c: any) => String(c.name).toLowerCase());
+      if (!names.some((n: string) => n.includes(options.categoryNameIncludes!.toLowerCase()))) continue;
+    }
+    if (options.tagNameIncludes) {
+      const names = (((p as any).tags) || []).map((t: any) => String(t.name).toLowerCase());
+      if (!names.some((n: string) => n.includes(options.tagNameIncludes!.toLowerCase()))) continue;
+    }
     try {
       const payload: any = {};
       if (applyOn === "regular") payload.regular_price = apply(p.regular_price);
@@ -45,5 +66,10 @@ export async function increasePricesForm(formData: FormData) {
   const percent = Number(formData.get("percent") || 0);
   const applyOn = (formData.get("applyOn")?.toString() as any) || "regular";
   const roundToInteger = formData.get("roundToInteger") ? true : false;
-  await increasePricesGlobally({ percent, applyOn, roundToInteger });
+  const parseCsvNums = (s?: string | null) => (s ? s.split(",").map((x) => Number(x.trim())).filter((n) => !Number.isNaN(n)) : []);
+  const categoryIds = parseCsvNums(formData.get("categoryIds")?.toString());
+  const tagIds = parseCsvNums(formData.get("tagIds")?.toString());
+  const categoryNameIncludes = formData.get("categoryNameIncludes")?.toString() || undefined;
+  const tagNameIncludes = formData.get("tagNameIncludes")?.toString() || undefined;
+  await increasePricesGlobally({ percent, applyOn, roundToInteger, categoryIds, tagIds, categoryNameIncludes, tagNameIncludes });
 }
