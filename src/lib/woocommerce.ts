@@ -76,7 +76,8 @@ export type WooTag = {
 };
 
 export async function getProductBySku(sku: string) {
-  const data = await wooFetch<WooProduct[]>("/wp-json/wc/v3/products", { method: "GET" }, { sku, per_page: 1 });
+  // Durum filtrelemesini geniş tutalım (taslak/publish fark etmeksizin bulabilelim)
+  const data = await wooFetch<WooProduct[]>("/wp-json/wc/v3/products", { method: "GET" }, { sku, per_page: 1, status: "any" });
   return data[0];
 }
 
@@ -86,7 +87,7 @@ export async function listAllProducts(): Promise<WooProduct[]> {
   const per_page = 100;
   const result: WooProduct[] = [];
   while (true) {
-    const batch = await wooFetch<WooProduct[]>("/wp-json/wc/v3/products", { method: "GET" }, { per_page, page });
+    const batch = await wooFetch<WooProduct[]>("/wp-json/wc/v3/products", { method: "GET" }, { per_page, page, status: "any" });
     result.push(...batch);
     if (batch.length < per_page) break;
     page++;
