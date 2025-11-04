@@ -8,7 +8,10 @@ import crypto from "node:crypto";
 
 export type SyncOptions = {
   deleteMissing?: boolean;
-  onlyCreateNew?: boolean;
+  onlyCreateNew?: boolean; // legacy
+  doCreateNew?: boolean;
+  doUpdateExisting?: boolean;
+  updateStockOnly?: boolean;
   updateImagesOnUpdate?: boolean;
   profitMarginPercent?: number; // %
   applyMarginOn?: "regular" | "sale" | "both";
@@ -69,6 +72,9 @@ export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
   const factor = 1 + ((options.profitMarginPercent || 0) / 100);
   const applyMarginOn = options.applyMarginOn || "regular";
   const roundToInteger = options.roundToInteger ?? true;
+  const updateStockOnly = !!options.updateStockOnly;
+  const doCreateNew = options.doCreateNew ?? (options.onlyCreateNew !== undefined ? !options.onlyCreateNew : true);
+  const doUpdateExisting = options.doUpdateExisting ?? (options.onlyCreateNew !== undefined ? !options.onlyCreateNew : true);
 
   const applyMargin = (value?: string) => {
     if (!value) return undefined;
@@ -94,22 +100,32 @@ export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
         sale_price = applyMargin(sale_price) ?? sale_price;
       }
 
-      const payload: any = {
-        name: prod.name,
-        description: prod.description,
-        short_description: prod.short_description,
-        regular_price,
-        sale_price,
-        sku: prod.sku,
-        manage_stock: prod.manage_stock ?? false,
-        stock_quantity: prod.stock_quantity,
-        status: prod.status ?? "publish",
-        images: prod.images,
-        // Kategori eşleme gerektirebilir; basit kullanım için şimdilik atlanabilir
-      };
-
       if (current?.id) {
-        if (!options.onlyCreateNew) {
+        if (!doUpdateExisting) {
+          // mevcut ürünleri güncelleme kapalıysa geç
+          continue;
+        }
+        if (updateStockOnly) {
+          const payloadStock: any = {
+            manage_stock: prod.manage_stock ?? false,
+            stock_quantity: prod.stock_quantity,
+          };
+          await updateProduct(current.id, payloadStock);
+          updated++;
+          updatedSkus.push(prod.sku);
+        } else {
+          const payload: any = {
+            name: prod.name,
+            description: prod.description,
+            short_description: prod.short_description,
+            regular_price,
+            sale_price,
+            sku: prod.sku,
+            manage_stock: prod.manage_stock ?? false,
+            stock_quantity: prod.stock_quantity,
+            status: prod.status ?? "publish",
+            images: prod.images,
+          };
           // Görsel güncelleme kapalıysa mevcut ürün güncellemesinde images alanını kaldır
           if (options.updateImagesOnUpdate === false) {
             delete payload.images;
@@ -119,7 +135,24 @@ export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
           updatedSkus.push(prod.sku);
         }
       } else {
-        await createProduct(payload);
+        if (updateStockOnly || !doCreateNew) {
+          // stok-only modunda yeni ürün yaratma yok; ayrıca doCreateNew false ise yaratma yok
+          continue;
+        }
+        const payloadCreate: any = {
+          name: prod.name,
+          type: "simple",
+          description: prod.description,
+          short_description: prod.short_description,
+          regular_price,
+          sale_price,
+          sku: prod.sku,
+          manage_stock: prod.manage_stock ?? false,
+          stock_quantity: prod.stock_quantity,
+          status: prod.status ?? "publish",
+          images: prod.images,
+        };
+        await createProduct(payloadCreate);
         created++;
         createdSkus.push(prod.sku);
       }

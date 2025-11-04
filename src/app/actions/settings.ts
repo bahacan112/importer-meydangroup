@@ -20,7 +20,11 @@ export async function saveWooSettings(s: WooSettings): Promise<void> {
 export async function saveAppSettingsForm(formData: FormData) {
   const s: AppSettings = {
     xml_path: formData.get("xml_path")?.toString() || undefined,
-    onlyCreateNew: formData.get("onlyCreateNew") ? true : false,
+    // Hem eski hem yeni alanları destekle
+    onlyCreateNew: formData.get("onlyCreateNew") ? true : undefined,
+    doCreateNew: formData.get("doCreateNew") ? true : undefined,
+    doUpdateExisting: formData.get("doUpdateExisting") ? true : undefined,
+    updateStockOnly: formData.get("updateStockOnly") ? true : undefined,
     updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : false,
     profitMarginPercent: formData.get("profitMarginPercent") ? Number(formData.get("profitMarginPercent")) : undefined,
     applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,

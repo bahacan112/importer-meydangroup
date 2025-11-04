@@ -16,9 +16,10 @@ type Report = {
   errors: { sku?: string; message: string }[];
 };
 
-export default async function AnalysisPage({ searchParams }: { searchParams?: { file?: string } }) {
+export default async function AnalysisPage({ searchParams }: { searchParams?: Promise<{ file?: string }> }) {
   const files = await listReports();
-  const selected = searchParams?.file || files[0] || "sync-report-latest.json";
+  const sp = (await searchParams) || {};
+  const selected = sp.file || files[0] || "sync-report-latest.json";
   const report = selected ? await getReportByFile(selected) : await getLastReport();
   return (
     <Shell>
@@ -29,11 +30,14 @@ export default async function AnalysisPage({ searchParams }: { searchParams?: { 
           <Link href="/dashboard"><Button variant="secondary">Dashboard’a Dön</Button></Link>
           <div className="flex items-center gap-2">
             <label className="text-sm">Rapor Seç</label>
-            <select className="border rounded h-9 px-2" defaultValue={selected} onChange={(e) => location.href = `/analysis?file=${encodeURIComponent(e.target.value)}`}>
-              {files.map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
+            <form action="/analysis" method="GET" className="flex items-center gap-2">
+              <select name="file" className="border rounded h-9 px-2" defaultValue={selected}>
+                {files.map((f) => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+              <Button type="submit" variant="outline">Göster</Button>
+            </form>
           </div>
         </div>
       </div>

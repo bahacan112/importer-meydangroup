@@ -39,7 +39,11 @@ db.exec(`
 
 export type AppSettings = {
   xml_path?: string;
+  // Legacy: onlyCreateNew artık iki bayrak ile ayrıştırıldı
   onlyCreateNew?: boolean;
+  doCreateNew?: boolean; // yeni ürünleri ekle
+  doUpdateExisting?: boolean; // mevcut olanları güncelle
+  updateStockOnly?: boolean; // sadece stok güncelle
   updateImagesOnUpdate?: boolean;
   profitMarginPercent?: number;
   applyMarginOn?: "regular" | "sale" | "both";
@@ -52,11 +56,24 @@ export type WooSettings = {
   consumer_secret?: string;
 };
 
+function ensureAppSettingsColumns() {
+  const cols = db.prepare("PRAGMA table_info(app_settings)").all() as { name: string }[];
+  const has = (name: string) => cols.some((c) => c.name === name);
+  if (!has("doCreateNew")) db.exec("ALTER TABLE app_settings ADD COLUMN doCreateNew INTEGER DEFAULT 1");
+  if (!has("doUpdateExisting")) db.exec("ALTER TABLE app_settings ADD COLUMN doUpdateExisting INTEGER DEFAULT 1");
+  if (!has("updateStockOnly")) db.exec("ALTER TABLE app_settings ADD COLUMN updateStockOnly INTEGER DEFAULT 0");
+}
+
 export function getAppSettings(): AppSettings {
+  ensureAppSettingsColumns();
   const row = db.prepare("SELECT * FROM app_settings WHERE id = 1").get() as any;
   return {
     xml_path: row?.xml_path ?? undefined,
-    onlyCreateNew: !!row?.onlyCreateNew,
+    // Geri uyumluluk: onlyCreateNew varsa onu da expose edelim
+    onlyCreateNew: row?.onlyCreateNew !== undefined ? !!row.onlyCreateNew : undefined,
+    doCreateNew: row?.doCreateNew !== undefined ? !!row.doCreateNew : (row?.onlyCreateNew !== undefined ? !row.onlyCreateNew : true),
+    doUpdateExisting: row?.doUpdateExisting !== undefined ? !!row.doUpdateExisting : (row?.onlyCreateNew !== undefined ? !row.onlyCreateNew : true),
+    updateStockOnly: row?.updateStockOnly !== undefined ? !!row.updateStockOnly : false,
     updateImagesOnUpdate: row?.updateImagesOnUpdate !== undefined ? !!row.updateImagesOnUpdate : true,
     profitMarginPercent: row?.profitMarginPercent ?? 0,
     applyMarginOn: (row?.applyMarginOn as any) ?? "regular",
@@ -65,9 +82,13 @@ export function getAppSettings(): AppSettings {
 }
 
 export function saveAppSettings(s: AppSettings) {
+  ensureAppSettingsColumns();
   db.prepare(`UPDATE app_settings SET 
     xml_path = COALESCE(?, xml_path),
     onlyCreateNew = COALESCE(?, onlyCreateNew),
+    doCreateNew = COALESCE(?, doCreateNew),
+    doUpdateExisting = COALESCE(?, doUpdateExisting),
+    updateStockOnly = COALESCE(?, updateStockOnly),
     updateImagesOnUpdate = COALESCE(?, updateImagesOnUpdate),
     profitMarginPercent = COALESCE(?, profitMarginPercent),
     applyMarginOn = COALESCE(?, applyMarginOn),
@@ -76,6 +97,9 @@ export function saveAppSettings(s: AppSettings) {
   `).run(
     s.xml_path ?? null,
     s.onlyCreateNew === undefined ? null : (s.onlyCreateNew ? 1 : 0),
+    s.doCreateNew === undefined ? null : (s.doCreateNew ? 1 : 0),
+    s.doUpdateExisting === undefined ? null : (s.doUpdateExisting ? 1 : 0),
+    s.updateStockOnly === undefined ? null : (s.updateStockOnly ? 1 : 0),
     s.updateImagesOnUpdate === undefined ? null : (s.updateImagesOnUpdate ? 1 : 0),
     s.profitMarginPercent ?? null,
     s.applyMarginOn ?? null,

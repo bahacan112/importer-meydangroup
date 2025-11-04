@@ -24,7 +24,9 @@ export default function DashboardPage() {
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleteMissing, setDeleteMissing] = useState(false);
-  const [onlyCreateNew, setOnlyCreateNew] = useState(false);
+  const [doCreateNew, setDoCreateNew] = useState(true);
+  const [doUpdateExisting, setDoUpdateExisting] = useState(true);
+  const [updateStockOnly, setUpdateStockOnly] = useState(false);
   const [updateImagesOnUpdate, setUpdateImagesOnUpdate] = useState(true);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(0);
   const [applyMarginOn, setApplyMarginOn] = useState<"regular" | "sale" | "both">("regular");
@@ -37,7 +39,9 @@ export default function DashboardPage() {
       try {
         const s = await getAppSettings();
         if (s.xml_path) setXmlPath(s.xml_path);
-        if (typeof s.onlyCreateNew === "boolean") setOnlyCreateNew(s.onlyCreateNew);
+        if (typeof s.doCreateNew === "boolean") setDoCreateNew(s.doCreateNew);
+        if (typeof s.doUpdateExisting === "boolean") setDoUpdateExisting(s.doUpdateExisting);
+        if (typeof s.updateStockOnly === "boolean") setUpdateStockOnly(s.updateStockOnly);
         if (typeof s.updateImagesOnUpdate === "boolean") setUpdateImagesOnUpdate(s.updateImagesOnUpdate);
         if (typeof s.profitMarginPercent === "number") setProfitMarginPercent(s.profitMarginPercent);
         if (s.applyMarginOn) setApplyMarginOn(s.applyMarginOn);
@@ -94,7 +98,9 @@ export default function DashboardPage() {
     try {
       const result = await runSync(xmlPath, {
         deleteMissing,
-        onlyCreateNew,
+        doCreateNew,
+        doUpdateExisting,
+        updateStockOnly,
         updateImagesOnUpdate,
         profitMarginPercent,
         applyMarginOn,
@@ -133,7 +139,7 @@ export default function DashboardPage() {
               <Button type="submit" disabled={loading}>Önizleme</Button>
               <Button type="button" variant="outline" disabled={loading} onClick={async () => {
                 try {
-                  await saveAppSettings({ xml_path: xmlPath, onlyCreateNew, updateImagesOnUpdate, profitMarginPercent, applyMarginOn, roundToInteger });
+                  await saveAppSettings({ xml_path: xmlPath, doCreateNew, doUpdateExisting, updateStockOnly, updateImagesOnUpdate, profitMarginPercent, applyMarginOn, roundToInteger });
                   toast.success("Ayarlar kaydedildi");
                 } catch (e: any) {
                   toast.error(e?.message || "Ayarlar kaydedilemedi");
@@ -146,9 +152,19 @@ export default function DashboardPage() {
           <input id="deleteMissing" type="checkbox" checked={deleteMissing} onChange={(e) => setDeleteMissing(e.target.checked)} />
           <label htmlFor="deleteMissing" className="text-sm">XML’de olmayan ürünleri sil</label>
         </div>
-        <div className="flex items-center gap-2">
-          <input id="onlyCreateNew" type="checkbox" checked={onlyCreateNew} onChange={(e) => setOnlyCreateNew(e.target.checked)} />
-          <label htmlFor="onlyCreateNew" className="text-sm">Sadece yeni ürünleri ekle (mevcut olanları güncelleme)</label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="flex items-center gap-2">
+            <input id="doCreateNew" type="checkbox" checked={doCreateNew} onChange={(e) => setDoCreateNew(e.target.checked)} />
+            <label htmlFor="doCreateNew" className="text-sm">Yeni ürünleri ekle</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input id="doUpdateExisting" type="checkbox" checked={doUpdateExisting} onChange={(e) => setDoUpdateExisting(e.target.checked)} />
+            <label htmlFor="doUpdateExisting" className="text-sm">Mevcut olanları güncelle</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input id="updateStockOnly" type="checkbox" checked={updateStockOnly} onChange={(e) => setUpdateStockOnly(e.target.checked)} />
+            <label htmlFor="updateStockOnly" className="text-sm">Sadece stokları güncelle (mevcut ürünlerde)</label>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <input id="updateImagesOnUpdate" type="checkbox" checked={updateImagesOnUpdate} onChange={(e) => setUpdateImagesOnUpdate(e.target.checked)} />
@@ -157,18 +173,18 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
           <div>
             <label className="text-sm">Kar oranı (%)</label>
-            <Input type="number" value={profitMarginPercent} onChange={(e) => setProfitMarginPercent(Number(e.target.value))} />
+            <Input type="number" value={profitMarginPercent} onChange={(e) => setProfitMarginPercent(Number(e.target.value))} disabled={updateStockOnly} />
           </div>
           <div>
             <label className="text-sm">Kar uygulanacak fiyat</label>
-            <select className="border rounded h-9 px-2" value={applyMarginOn} onChange={(e) => setApplyMarginOn(e.target.value as any)}>
+            <select className="border rounded h-9 px-2" value={applyMarginOn} onChange={(e) => setApplyMarginOn(e.target.value as any)} disabled={updateStockOnly}>
               <option value="regular">Regular price</option>
               <option value="sale">Sale price</option>
               <option value="both">Her ikisi</option>
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <input id="roundToInteger" type="checkbox" checked={roundToInteger} onChange={(e) => setRoundToInteger(e.target.checked)} />
+            <input id="roundToInteger" type="checkbox" checked={roundToInteger} onChange={(e) => setRoundToInteger(e.target.checked)} disabled={updateStockOnly} />
             <label htmlFor="roundToInteger" className="text-sm">Yuvarla (tam TL)</label>
           </div>
         </div>
