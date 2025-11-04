@@ -66,6 +66,11 @@ export async function POST(req: NextRequest) {
         roundToInteger: formData.get("roundToInteger") ? true : false,
       };
       await write({ type: "start", at: startTs, message: "Senkronizasyon başlatıldı" });
+      // Teşhis: WooCommerce base URL'i logla (anahtarı/sırrı loglamıyoruz)
+      try {
+        const wooUrl = process.env.WOOCOMMERCE_URL || "";
+        await write({ type: "woo_config", baseUrl: wooUrl || "(tanımsız)" });
+      } catch {}
 
       // JSON kaydetme için dizini hazırla
       const uploadsDir = path.join(process.cwd(), "public", "uploads", "new-system");
@@ -418,7 +423,7 @@ export async function POST(req: NextRequest) {
               if (createdProd?.id) {
                 existingBySku.set(prod.sku, { id: createdProd.id, sku: prod.sku } as any);
                 created++;
-                await write({ type: "created_product", sku: prod.sku, name: prod.name });
+                await write({ type: "created_product", sku: prod.sku, id: createdProd.id, name: prod.name });
               }
             }
           }
