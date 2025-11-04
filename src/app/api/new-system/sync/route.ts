@@ -16,6 +16,7 @@ import {
   createCategory,
   listAllTags,
   createTag,
+  findMediaByFilename,
 } from "@/lib/woocommerce";
 
 export const runtime = "nodejs";
@@ -30,6 +31,9 @@ type SyncOptions = {
   profitMarginPercent?: number; // %
   applyMarginOn?: "regular" | "sale" | "both";
   roundToInteger?: boolean;
+  mediaMode?: "upload" | "prefer_existing_by_filename" | "none";
+  limit?: number;
+  perItemDelayMs?: number;
 };
 
 function line(obj: any) {
@@ -64,6 +68,9 @@ export async function POST(req: NextRequest) {
         profitMarginPercent: formData.get("profitMarginPercent") ? Number(formData.get("profitMarginPercent")) : undefined,
         applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,
         roundToInteger: formData.get("roundToInteger") ? true : false,
+        mediaMode: (formData.get("mediaMode")?.toString() as any) || "prefer_existing_by_filename",
+        limit: formData.get("limit") ? Number(formData.get("limit")) : undefined,
+        perItemDelayMs: formData.get("perItemDelayMs") ? Number(formData.get("perItemDelayMs")) : undefined,
       };
       await write({ type: "start", at: startTs, message: "Senkronizasyon başlatıldı" });
       // Teşhis: WooCommerce base URL'i logla (anahtarı/sırrı loglamıyoruz)
@@ -133,13 +140,17 @@ export async function POST(req: NextRequest) {
       const toImportAll = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
       // Yinelenen SKU’ları tekilleştirerek concurrent create denemelerini önle
       const seen = new Set<string>();
-      const toImport = toImportAll.filter((p) => {
+      let toImport = toImportAll.filter((p) => {
         if (!p.sku) return false;
         const key = String(p.sku);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
+      if (options.limit && options.limit > 0) {
+        toImport = toImport.slice(0, options.limit);
+        await write({ type: "limit_applied", limit: options.limit, effective: toImport.length });
+      }
       await write({ type: "info", message: `Toplam içe aktarılacak: ${toImport.length}` });
       const existing = await listAllProducts();
       const existingBySku = new Map<string, { id: number } & any>();
@@ -287,7 +298,45 @@ export async function POST(req: NextRequest) {
         return cleaned.length > 0 ? cleaned : undefined;
       };
 
+      // Mevcut medya varsa dosya adına göre tercih et
+      const basenameIdCache = new Map<string, number>();
+      async function resolveImages(images?: { src: string }[], mode: "upload" | "prefer_existing_by_filename" | "none" = "prefer_existing_by_filename") {
+        if (!images || images.length === 0) return undefined;
+        if (mode === "none") return undefined;
+        const cleaned = sanitizeImages(images);
+        if (!cleaned) return undefined;
+        if (mode === "upload") return cleaned;
+        const out: ({ id: number } | { src: string })[] = [];
+        for (const img of cleaned) {
+          try {
+            const u = new URL(img.src);
+            const base = u.pathname.split("/").pop() || "";
+            if (basenameIdCache.has(base)) {
+              const id = basenameIdCache.get(base)!;
+              out.push({ id });
+              await write({ type: "found_existing_media_cached", basename: base, id });
+              continue;
+            }
+            const found = await findMediaByFilename(base);
+            if (found?.id) {
+              basenameIdCache.set(base, found.id);
+              out.push({ id: found.id });
+              await write({ type: "found_existing_media", basename: base, id: found.id });
+            } else {
+              out.push({ src: img.src });
+              await write({ type: "fallback_upload_media", basename: base, src: img.src });
+            }
+          } catch {
+            out.push({ src: img.src });
+          }
+        }
+        return out.length ? out : undefined;
+      }
+
       for (const prod of toImport) {
+        if (options.perItemDelayMs && options.perItemDelayMs > 0) {
+          await new Promise((r) => setTimeout(r, options.perItemDelayMs));
+        }
         try {
           const current = existingBySku.get(prod.sku);
           // Kar oranı uygula
@@ -352,7 +401,7 @@ export async function POST(req: NextRequest) {
                 manage_stock: prod.manage_stock ?? false,
                 stock_quantity: prod.stock_quantity,
                 status: prod.status ?? "publish",
-                images: sanitizeImages(prod.images),
+                images: await resolveImages(prod.images as any, options.mediaMode || "prefer_existing_by_filename"),
                 categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
                 tags: tagIds.length ? tagIds.map((id) => ({ id })) : undefined,
               };

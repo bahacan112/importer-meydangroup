@@ -55,7 +55,8 @@ export type WooProduct = {
   stock_quantity?: number;
   manage_stock?: boolean;
   status?: "draft" | "publish";
-  images?: { src: string; name?: string; alt?: string }[];
+  // WooCommerce ürün görselleri için ya src (yeni yükleme) ya da id (mevcut attachment) gönderilebilir
+  images?: ({ src: string; name?: string; alt?: string } | { id: number; name?: string; alt?: string })[];
   categories?: { id?: number; name?: string }[];
   tags?: { id?: number; name?: string }[];
 };
@@ -164,4 +165,66 @@ export async function createTag(tag: WooTag) {
     "/wp-json/wc/v3/products/tags",
     { method: "POST", body: JSON.stringify(tag) }
   );
+}
+
+// ---- WordPress (WP REST) medya yardımcıları ----
+type WpMedia = {
+  id: number;
+  source_url: string;
+  media_type?: string;
+  mime_type?: string;
+  alt_text?: string;
+  slug?: string;
+};
+
+function buildWpUrl(path: string, query: Record<string, string | number | boolean | undefined> = {}) {
+  const { baseUrl } = getConfig();
+  const url = new URL(path, baseUrl);
+  Object.entries(query).forEach(([k, v]) => {
+    if (v !== undefined) url.searchParams.set(k, String(v));
+  });
+  return url.toString();
+}
+
+async function wpFetch<T = any>(path: string, init?: RequestInit, query?: Record<string, any>): Promise<T> {
+  const url = buildWpUrl(path, query);
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`WordPress API hatası: ${res.status} ${res.statusText} - ${text}`);
+  }
+  return res.json();
+}
+
+// Basit dosya adı eşleştirme: image.jpg, image-1.jpg, image-scaled.jpg gibi varyasyonları toleranslı karşılaştır
+function matchesBasename(candidateUrl: string, targetBase: string) {
+  try {
+    const u = new URL(candidateUrl);
+    const last = (u.pathname.split("/").pop() || "").toLowerCase();
+    const t = targetBase.toLowerCase();
+    if (last === t) return true;
+    // Sonekleri kaldırarak karşılaştır ("-scaled", "-1", "-2" vb.)
+    const stripSuffix = (s: string) => s.replace(/-scaled(?=\.)/i, "").replace(/-\d+(?=\.)/g, "");
+    return stripSuffix(last) === stripSuffix(t);
+  } catch {
+    return false;
+  }
+}
+
+export async function findMediaByFilename(basename: string): Promise<WpMedia | undefined> {
+  try {
+    const list = await wpFetch<WpMedia[]>("/wp-json/wp/v2/media", { method: "GET" }, { per_page: 50, media_type: "image", search: basename });
+    // En iyi eşleşmeyi seç
+    const exact = list.find((m) => matchesBasename(m.source_url, basename));
+    return exact || list[0];
+  } catch (e) {
+    // Bazı sitelerde wp/v2/media listeleme için auth gerekebilir; hata varsa sessizce yok sayıp undefined döndür
+    return undefined;
+  }
 }
