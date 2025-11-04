@@ -62,7 +62,9 @@ export function mapNewSystemToProducts(raw: NewSystemRawProduct[], imageBaseUrl?
   const normBase = imageBaseUrl ? imageBaseUrl.replace(/\/$/, "") : undefined;
   return raw.map((p) => {
     const sku = String(p.KOD);
-    const name = String(p.STOK_ADI);
+    const baseName = String(p.STOK_ADI);
+    const oem = p.OEM ? String(p.OEM).trim() : "";
+    const name = oem && oem.length > 0 ? `${oem} - ${baseName}` : baseName;
     const descriptionParts = [p.OEM, p.MARKA, p.MODEL].filter((x) => !!x && String(x).trim().length > 0).map((x) => String(x));
     const description = descriptionParts.join(" - ") || undefined;
     const regular_price = toPriceString(p.FIYAT);
