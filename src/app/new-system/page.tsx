@@ -33,6 +33,12 @@ export default function NewSystemPage() {
   const [applyMarginOn, setApplyMarginOn] = useState<"regular" | "sale" | "both">("regular");
   const [roundToInteger, setRoundToInteger] = useState<boolean>(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [syncRunning, setSyncRunning] = useState(false);
+  const [syncLabel, setSyncLabel] = useState<string>("");
+  const [processed, setProcessed] = useState<number>(0);
+  const [total, setTotal] = useState<number>(0);
+  const [elapsedMs, setElapsedMs] = useState<number>(0);
+  const [speed, setSpeed] = useState<number>(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -74,6 +80,12 @@ export default function NewSystemPage() {
   async function onSync() {
     try {
       setLoading(true);
+      setSyncRunning(true);
+      setSyncLabel("Senkronizasyon başlatılıyor...");
+      setProcessed(0);
+      setTotal(0);
+      setElapsedMs(0);
+      setSpeed(0);
       const fd = new FormData();
       fd.append("api_url", apiUrl);
       fd.append("image_base_url", imageBaseUrl);
@@ -85,14 +97,53 @@ export default function NewSystemPage() {
       fd.append("profitMarginPercent", String(profitMarginPercent || 0));
       fd.append("applyMarginOn", applyMarginOn);
       fd.append("roundToInteger", roundToInteger ? "1" : "");
-      const res = await runNewSystemSyncForm(fd);
-      toast.success(`Senkronizasyon tamamlandı: Eklenen ${res.created}, Güncellenen ${res.updated}, Silinen ${res.deleted}`);
+      const res = await fetch("/api/new-system/sync", { method: "POST", body: fd });
+      if (!res.body) throw new Error("Canlı akış başlatılamadı");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split("\n").filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const evt = JSON.parse(line);
+            if (evt.type === "start") {
+              setSyncLabel("Senkronizasyon başlatıldı");
+            } else if (evt.type === "created_product") {
+              setSyncLabel(`Oluşturulan: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "updated_product") {
+              setSyncLabel(`Güncellenen: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "updated_stock") {
+              setSyncLabel(`Stok güncellendi: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "deleted_missing") {
+              setSyncLabel(`Eksik silindi: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "progress") {
+              setProcessed(evt.processed || 0);
+              setTotal(evt.total || 0);
+              setElapsedMs(evt.elapsedMs || 0);
+              setSpeed(evt.speed || 0);
+            } else if (evt.type === "done") {
+              setSyncLabel(`Tamamlandı: +${evt.created} / ~${evt.updated} / -${evt.deleted}`);
+              toast.success(`Senkronizasyon tamamlandı: Eklenen ${evt.created}, Güncellenen ${evt.updated}, Silinen ${evt.deleted}`);
+            } else if (evt.type === "error") {
+              setSyncLabel(`Hata: ${evt.error}`);
+            } else if (evt.type === "fatal") {
+              setSyncLabel(`Kritik hata: ${evt.message}`);
+            }
+          } catch {
+            // metinsel satırları görmezden gel
+          }
+        }
+      }
       router.push("/analysis");
     } catch (e: any) {
       toast.error(e?.message || "Senkronizasyon hata");
     } finally {
       setLoading(false);
       setConfirmOpen(false);
+      setSyncRunning(false);
     }
   }
 
@@ -191,8 +242,21 @@ export default function NewSystemPage() {
         <Card className="p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="font-medium">Önizleme ({items.length})</div>
-            <div className="flex items-center gap-2">
-              <Button variant="destructive" onClick={() => setConfirmOpen(true)} disabled={loading}>Senkronize Et</Button>
+            <div className="flex flex-col items-end gap-1">
+              {/* Canlı label */}
+              <div className="text-xs text-gray-600">
+                <span className="font-medium">Durum:</span> {syncLabel || "Beklemede"}
+                {total > 0 && (
+                  <span className="ml-2">| {processed}/{total} ({Math.floor((processed/Math.max(total,1))*100)}%)</span>
+                )}
+                {elapsedMs > 0 && (
+                  <span className="ml-2">| {Math.round(elapsedMs/1000)} sn</span>
+                )}
+                {speed > 0 && (
+                  <span className="ml-2">| {speed.toFixed(1)} kayıt/sn</span>
+                )}
+              </div>
+              <Button variant="destructive" onClick={() => setConfirmOpen(true)} disabled={loading || syncRunning}>{syncRunning ? "Senkronizasyon yapılıyor..." : "Senkronize Et"}</Button>
             </div>
           </div>
           <div className="overflow-auto">
