@@ -1,6 +1,7 @@
 import { Shell } from "@/components/shell";
-import { getWooSettings, saveWooSettingsForm, deleteAllForm } from "../actions/settings";
+import { getWooSettings, saveWooSettingsForm } from "../actions/settings";
 import { Button } from "@/components/ui/button";
+import DangerZoneDeleteAll from "@/components/DangerZoneDeleteAll";
 
 export default async function SettingsPage() {
   const woo = await getWooSettings();
@@ -28,10 +29,7 @@ export default async function SettingsPage() {
 
         <section className="space-y-4">
           <h2 className="text-lg font-semibold text-red-600">Tehlikeli İşlemler</h2>
-          <p className="text-sm text-red-500">Bu işlem tüm ürünleri ve kategorileri kalıcı olarak siler. Geri alınamaz!</p>
-          <form action={deleteAllForm} className="space-y-2">
-            <Button type="submit" variant="destructive">Tüm Ürünleri ve Kategorileri Sil</Button>
-          </form>
+          <DangerZoneDeleteAll />
         </section>
       </div>
     </Shell>
