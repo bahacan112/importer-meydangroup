@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 type PreviewItem = {
   sku: string;
@@ -21,7 +22,13 @@ export default function DashboardPage() {
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleteMissing, setDeleteMissing] = useState(false);
+  const [onlyCreateNew, setOnlyCreateNew] = useState(false);
+  const [updateImagesOnUpdate, setUpdateImagesOnUpdate] = useState(true);
+  const [profitMarginPercent, setProfitMarginPercent] = useState<number>(0);
+  const [applyMarginOn, setApplyMarginOn] = useState<"regular" | "sale" | "both">("regular");
+  const [roundToInteger, setRoundToInteger] = useState<boolean>(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     // env’den otomatik doldurma
@@ -39,13 +46,30 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const data = await previewXml(xmlPath);
+      const factor = 1 + (profitMarginPercent || 0) / 100;
       setItems(
-        data.map((d: any) => ({
-          sku: d.sku,
-          name: d.name,
-          regular_price: d.regular_price,
-          stock_quantity: d.stock_quantity,
-        }))
+        data.map((d: any) => {
+          const basePriceStr =
+            applyMarginOn === "regular"
+              ? d.regular_price
+              : applyMarginOn === "sale"
+              ? d.sale_price
+              : d.regular_price ?? d.sale_price;
+          let adjusted: string | undefined = undefined;
+          if (basePriceStr) {
+            const n = parseFloat(String(basePriceStr));
+            if (!Number.isNaN(n)) {
+              let v = n * factor;
+              adjusted = roundToInteger ? String(Math.round(v)) : v.toFixed(2);
+            }
+          }
+          return {
+            sku: d.sku,
+            name: d.name,
+            regular_price: adjusted ?? d.regular_price,
+            stock_quantity: d.stock_quantity,
+          };
+        })
       );
       toast.success(`Önizleme yüklendi (${data.length} ürün)`);
     } catch (e: any) {
@@ -57,10 +81,18 @@ export default function DashboardPage() {
   async function onSync() {
     setLoading(true);
     try {
-      const result = await runSync(xmlPath, { deleteMissing });
+      const result = await runSync(xmlPath, {
+        deleteMissing,
+        onlyCreateNew,
+        updateImagesOnUpdate,
+        profitMarginPercent,
+        applyMarginOn,
+        roundToInteger,
+      });
       toast.success(
         `Senkronizasyon tamamlandı. Eklendi: ${result.created}, Güncellendi: ${result.updated}, Silindi: ${result.deleted}`
       );
+      router.push("/analysis");
     } catch (e: any) {
       toast.error(e?.message || "Senkronizasyon başarısız");
     }
@@ -91,6 +123,32 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <input id="deleteMissing" type="checkbox" checked={deleteMissing} onChange={(e) => setDeleteMissing(e.target.checked)} />
           <label htmlFor="deleteMissing" className="text-sm">XML’de olmayan ürünleri sil</label>
+        </div>
+        <div className="flex items-center gap-2">
+          <input id="onlyCreateNew" type="checkbox" checked={onlyCreateNew} onChange={(e) => setOnlyCreateNew(e.target.checked)} />
+          <label htmlFor="onlyCreateNew" className="text-sm">Sadece yeni ürünleri ekle (mevcut olanları güncelleme)</label>
+        </div>
+        <div className="flex items-center gap-2">
+          <input id="updateImagesOnUpdate" type="checkbox" checked={updateImagesOnUpdate} onChange={(e) => setUpdateImagesOnUpdate(e.target.checked)} />
+          <label htmlFor="updateImagesOnUpdate" className="text-sm">Fotoğrafları güncelle (mevcut ürünlerde)</label>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <div>
+            <label className="text-sm">Kar oranı (%)</label>
+            <Input type="number" value={profitMarginPercent} onChange={(e) => setProfitMarginPercent(Number(e.target.value))} />
+          </div>
+          <div>
+            <label className="text-sm">Kar uygulanacak fiyat</label>
+            <select className="border rounded h-9 px-2" value={applyMarginOn} onChange={(e) => setApplyMarginOn(e.target.value as any)}>
+              <option value="regular">Regular price</option>
+              <option value="sale">Sale price</option>
+              <option value="both">Her ikisi</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <input id="roundToInteger" type="checkbox" checked={roundToInteger} onChange={(e) => setRoundToInteger(e.target.checked)} />
+            <label htmlFor="roundToInteger" className="text-sm">Yuvarla (tam TL)</label>
+          </div>
         </div>
         <Button disabled={loading} onClick={() => deleteMissing ? setConfirmOpen(true) : onSync()}>
           {loading ? "Çalışıyor..." : "Senkronizasyonu Başlat"}
