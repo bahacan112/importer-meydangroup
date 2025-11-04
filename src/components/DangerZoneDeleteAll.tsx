@@ -6,6 +6,8 @@ export default function DangerZoneDeleteAll() {
   const [running, setRunning] = React.useState(false);
   const [lastLabel, setLastLabel] = React.useState<string>("");
   const [logs, setLogs] = React.useState<string[]>([]);
+  const [logFile, setLogFile] = React.useState<string>("");
+  const [storeUrl, setStoreUrl] = React.useState<string>("");
 
   const start = async () => {
     if (running) return;
@@ -30,6 +32,13 @@ export default function DangerZoneDeleteAll() {
             const evt = JSON.parse(line);
             if (evt.type === "start") {
               setLastLabel("Silme işlemi başlatıldı");
+            } else if (evt.type === "context") {
+              setStoreUrl(evt.store || "");
+              setLogs((prev) => ["Mağaza: " + (evt.store || "(bilinmiyor)"), ...prev].slice(0, 50));
+            } else if (evt.type === "saved_file") {
+              setLogFile(evt.file || "");
+              const label = `Log dosyası: ${evt.file}`;
+              setLogs((prev) => [label, ...prev].slice(0, 50));
             } else if (evt.type === "deleted_product") {
               const label = `Silinen ürün: ${evt.name || "(isimsiz)"} (ID: ${evt.id}${evt.sku ? ", SKU: " + evt.sku : ""})`;
               setLastLabel(label);
@@ -77,6 +86,20 @@ export default function DangerZoneDeleteAll() {
       <div className="text-sm">
         <span className="font-medium">Durum:</span> {lastLabel || "Beklemede"}
       </div>
+      {(storeUrl || logFile) && (
+        <div className="text-xs text-gray-600">
+          {storeUrl && (
+            <div>
+              <span className="font-medium">Mağaza URL:</span> {storeUrl}
+            </div>
+          )}
+          {logFile && (
+            <div>
+              <span className="font-medium">Log dosyası:</span> {logFile}
+            </div>
+          )}
+        </div>
+      )}
       {logs.length > 0 && (
         <div className="mt-2 p-2 border rounded text-xs max-h-48 overflow-auto">
           <div className="font-semibold mb-1">Son Kayıtlar</div>
