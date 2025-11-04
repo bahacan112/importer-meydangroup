@@ -1,5 +1,6 @@
 "use client";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
+import { useActionState } from "react";
 import { increasePricesFormAction } from "../actions/ops";
 import { Button } from "@/components/ui/button";
 
@@ -13,7 +14,7 @@ function SubmitButton() {
 }
 
 export function OpsForm() {
-  const [state, formAction] = useFormState(increasePricesFormAction as any, { ok: false });
+  const [state, formAction] = useActionState(increasePricesFormAction as any, { ok: false });
   return (
     <form action={formAction} className="space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
