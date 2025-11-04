@@ -11,8 +11,8 @@ export function middleware(req: NextRequest) {
   const host = req.headers.get("host") || "localhost";
   const port = host.includes(":") ? host.split(":")[1] : "80";
   const cookieName = `auth_${port}`;
-  // Eski çerez ismini de kontrol ederek geri uyumluluk sağla
-  const auth = req.cookies.get(cookieName)?.value || req.cookies.get("auth")?.value;
+  // Sadece ilgili portun çerezini kabul et
+  const auth = req.cookies.get(cookieName)?.value;
   if (!auth) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";

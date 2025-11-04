@@ -23,4 +23,6 @@ export async function logout() {
   const port = host.includes(":") ? host.split(":")[1] : "80";
   const cookieName = `auth_${port}`;
   c.delete(cookieName);
+  // Eski çerez kalmışsa onu da temizleyelim
+  c.delete("auth");
 }
