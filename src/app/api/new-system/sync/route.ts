@@ -235,9 +235,21 @@ export async function POST(req: NextRequest) {
 
       const sanitizeImages = (images?: { src: string }[]) => {
         if (!images || images.length === 0) return undefined;
-        const cleaned = images.filter(
-          (i) => i && typeof i.src === "string" && /^https?:\/\//i.test(i.src)
-        );
+        const cleaned = images
+          .filter((i) => i && typeof i.src === "string" && /^https?:\/\//i.test(i.src))
+          .filter((i) => {
+            try {
+              const u = new URL(i.src);
+              const pathname = (u.pathname || "").trim();
+              if (!pathname || pathname === "/" || pathname.endsWith("/")) return false;
+              const base = pathname.split("/").pop() || "";
+              // En azından bir dosya adı var mı? ve tipik uzantı kontrolü
+              const hasExt = /\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(base);
+              return base.length > 1 && (hasExt || base.includes("."));
+            } catch {
+              return false;
+            }
+          });
         return cleaned.length > 0 ? cleaned : undefined;
       };
 
@@ -303,7 +315,20 @@ export async function POST(req: NextRequest) {
                 tags: tagIds.length ? tagIds.map((id) => ({ id })) : undefined,
               };
               if (options.updateImagesOnUpdate === false || !payload.images) delete payload.images;
-              await updateProduct(current.id, payload);
+              try {
+                await updateProduct(current.id, payload);
+              } catch (e: any) {
+                const emsg = e?.message || String(e);
+                if (payload.images && /image|görsel|media|forbidden|upload/i.test(emsg)) {
+                  // Görsel kaynak sorunu; görseller olmadan tekrar dene
+                  const withoutImages = { ...payload };
+                  delete withoutImages.images;
+                  await write({ type: "image_upload_failed", sku: prod.sku, id: current.id, error: emsg });
+                  await updateProduct(current.id, withoutImages);
+                } else {
+                  throw e;
+                }
+              }
               updated++;
               await write({ type: "updated_product", sku: prod.sku, id: current.id, name: prod.name });
             }
@@ -335,7 +360,20 @@ export async function POST(req: NextRequest) {
                 tags: tagIds.length ? tagIds.map((id) => ({ id })) : undefined,
               };
               if (!payloadCreate.images) delete payloadCreate.images;
-              const createdProd = await createProduct(payloadCreate);
+              let createdProd;
+              try {
+                createdProd = await createProduct(payloadCreate);
+              } catch (e: any) {
+                const emsg = e?.message || String(e);
+                if (payloadCreate.images && /image|görsel|media|forbidden|upload/i.test(emsg)) {
+                  const withoutImages = { ...payloadCreate };
+                  delete withoutImages.images;
+                  await write({ type: "image_upload_failed", sku: prod.sku, error: emsg });
+                  createdProd = await createProduct(withoutImages);
+                } else {
+                  throw e;
+                }
+              }
               if (createdProd?.id) {
                 existingBySku.set(prod.sku, { id: createdProd.id, sku: prod.sku } as any);
               }
