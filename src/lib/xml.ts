@@ -2,6 +2,45 @@ import { XMLParser } from "fast-xml-parser";
 import { z } from "zod";
 import fs from "node:fs";
 
+function pickField(obj: any, keys: string[]): any {
+  for (const k of keys) {
+    if (obj[k] != null) return obj[k];
+    const lower = k.toLowerCase();
+    const upper = k.toUpperCase();
+    if (obj[lower] != null) return obj[lower];
+    if (obj[upper] != null) return obj[upper];
+    if (obj[`@${k}`] != null) return obj[`@${k}`];
+    if (obj[`@${upper}`] != null) return obj[`@${upper}`];
+    if (obj[`@${lower}`] != null) return obj[`@${lower}`];
+    // Bazı XML'lerde attributes ayrı bir düğümde olabilir
+    if (obj.attributes && obj.attributes[k] != null) return obj.attributes[k];
+    if (obj.Attributes && obj.Attributes[k] != null) return obj.Attributes[k];
+  }
+  return undefined;
+}
+
+function pickByFragments(obj: any, fragments: string[]): any {
+  const keys = Object.keys(obj || {});
+  for (const key of keys) {
+    const keyLc = key.toLowerCase();
+    if (fragments.some((f) => keyLc.includes(f.toLowerCase()))) {
+      return obj[key];
+    }
+  }
+  // Attributes içinde arama
+  if (obj && (obj.attributes || obj.Attributes)) {
+    const attrs = obj.attributes || obj.Attributes;
+    const aKeys = Object.keys(attrs || {});
+    for (const key of aKeys) {
+      const keyLc = key.toLowerCase();
+      if (fragments.some((f) => keyLc.includes(f.toLowerCase()))) {
+        return attrs[key];
+      }
+    }
+  }
+  return undefined;
+}
+
 export const ProductSchema = z.object({
   sku: z.string().min(1),
   name: z.string().min(1),
@@ -37,11 +76,25 @@ export function parseXmlProducts(xmlPath: string): ParsedProduct[] {
     .map((p: any) => {
       // Sık kullanılan alan adlarını normalize et
       const sku =
-        p.sku || p.SKU || p.Sku || p.productCode || p.ProductCode || p.code || p.Code ||
-        p.id || p.ID || p["@sku"] || p["@SKU"] || p["@code"] || p["@id"];
+        pickField(p, [
+          "sku",
+          "SKU",
+          "productCode",
+          "ProductCode",
+          "code",
+          "Code",
+          "id",
+          "ID",
+        ]) ?? pickByFragments(p, ["sku", "code", "id", "stock", "stok"]);
       const name =
-        p.name || p.Name || p.title || p.Title || p.productName || p.ProductName ||
-        p["@name"] || p["@Name"];
+        pickField(p, [
+          "name",
+          "Name",
+          "title",
+          "Title",
+          "productName",
+          "ProductName",
+        ]) ?? pickByFragments(p, ["name", "title", "product", "item", "urun", "adı", "adi"]);
       const description = p.description || p.Description || p.longDescription || p.desc || p.Desc;
       const short_description =
         p.short_description || p.ShortDescription || p.shortDesc || p.ShortDesc || p.summary || p.Summary;
@@ -63,8 +116,8 @@ export function parseXmlProducts(xmlPath: string): ParsedProduct[] {
         .filter((c: any) => c && c.name);
 
       const candidate = {
-        sku,
-        name,
+        sku: sku != null ? String(sku) : undefined,
+        name: name != null ? String(name) : undefined,
         description,
         short_description,
         regular_price,
