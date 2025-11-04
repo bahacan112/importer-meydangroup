@@ -13,6 +13,8 @@ import {
   deleteProduct,
   listAllCategories,
   createCategory,
+  listAllTags,
+  createTag,
 } from "@/lib/woocommerce";
 
 export const runtime = "nodejs";
@@ -141,11 +143,19 @@ export async function POST(req: NextRequest) {
       const existingCats = await listAllCategories();
       const norm = (s?: string) => (s || "").trim().toLowerCase();
       const catKey = (parentId: number | undefined, name: string) => `${parentId || 0}::${norm(name)}`;
-      const catMap = new Map<string, number>();
-      for (const c of existingCats) {
-        if (!c.name) continue;
-        catMap.set(catKey(c.parent, c.name), c.id!);
-      }
+  const catMap = new Map<string, number>();
+  for (const c of existingCats) {
+    if (!c.name) continue;
+    catMap.set(catKey(c.parent, c.name), c.id!);
+  }
+  // Tag haritası
+  const existingTags = await listAllTags();
+  const tagNorm = (s?: string) => (s || "").trim().toLowerCase();
+  const tagMap = new Map<string, number>();
+  for (const t of existingTags) {
+    if (!t.name) continue;
+    tagMap.set(tagNorm(t.name), t.id!);
+  }
 
       // Hız için raw veriyi SKU ile eşleştir
       const rawBySku = new Map<string, any>();
@@ -153,31 +163,54 @@ export async function POST(req: NextRequest) {
         if (r && r.KOD) rawBySku.set(String(r.KOD), r);
       });
 
-      async function ensureCategoryChain(names: string[]): Promise<number[]> {
-        const ids: number[] = [];
-        let parentId: number | undefined = undefined;
-        for (const name of names) {
-          const n = name?.trim();
-          if (!n) continue;
-          const key = catKey(parentId, n);
-          let id = catMap.get(key);
-          if (!id) {
-            try {
-              const created = await createCategory({ name: n, parent: parentId });
-              id = created.id!;
-              catMap.set(key, id);
-              await write({ type: "category_created", name: n, parent: parentId || 0, id });
-            } catch (e: any) {
-              await write({ type: "error", error: `Kategori oluşturulamadı: ${n} - ${e?.message || e}` });
-              // Kategori olmadan devam edelim
-              continue;
-            }
-          }
-          ids.push(id);
-          parentId = id;
+  async function ensureCategoryChain(names: string[]): Promise<number[]> {
+    const ids: number[] = [];
+    let parentId: number | undefined = undefined;
+    for (const name of names) {
+      const n = name?.trim();
+      if (!n) continue;
+      const key = catKey(parentId, n);
+      let id = catMap.get(key);
+      if (!id) {
+        try {
+          const created = await createCategory({ name: n, parent: parentId });
+          id = created.id!;
+          catMap.set(key, id);
+          await write({ type: "category_created", name: n, parent: parentId || 0, id });
+        } catch (e: any) {
+          await write({ type: "error", error: `Kategori oluşturulamadı: ${n} - ${e?.message || e}` });
+          // Kategori olmadan devam edelim
+          continue;
         }
-        return ids;
       }
+      ids.push(id as number);
+      parentId = id as number;
+    }
+    return ids;
+  }
+
+  async function ensureTags(names: string[]): Promise<number[]> {
+    const ids: number[] = [];
+    for (const name of names) {
+      const n = name?.trim();
+      if (!n) continue;
+      const key = tagNorm(n);
+      let id = tagMap.get(key);
+      if (!id) {
+        try {
+          const created = await createTag({ name: n });
+          id = created.id!;
+          tagMap.set(key, id);
+          await write({ type: "tag_created", name: n, id });
+        } catch (e: any) {
+          await write({ type: "error", error: `Tag oluşturulamadı: ${n} - ${e?.message || e}` });
+          continue;
+        }
+      }
+      ids.push(id as number);
+    }
+    return ids;
+  }
 
       let created = 0;
       let updated = 0;
@@ -251,6 +284,10 @@ export async function POST(req: NextRequest) {
               const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
                 .map((x: any) => (x ? String(x) : ""));
               const catIds = await ensureCategoryChain(chain);
+              // Taglar: OEM, MARKA, MODEL, Ürün adı
+              const tagNames = [rawItem?.OEM, rawItem?.MARKA, rawItem?.MODEL, rawItem?.STOK_ADI]
+                .map((x: any) => (x ? String(x) : ""));
+              const tagIds = await ensureTags(tagNames);
               const payload: any = {
                 name: prod.name,
                 description: prod.description,
@@ -263,6 +300,7 @@ export async function POST(req: NextRequest) {
                 status: prod.status ?? "publish",
                 images: sanitizeImages(prod.images),
                 categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
+                tags: tagIds.length ? tagIds.map((id) => ({ id })) : undefined,
               };
               if (options.updateImagesOnUpdate === false || !payload.images) delete payload.images;
               await updateProduct(current.id, payload);
@@ -278,6 +316,9 @@ export async function POST(req: NextRequest) {
               const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
                 .map((x: any) => (x ? String(x) : ""));
               const catIds = await ensureCategoryChain(chain);
+              const tagNames = [rawItem?.OEM, rawItem?.MARKA, rawItem?.MODEL, rawItem?.STOK_ADI]
+                .map((x: any) => (x ? String(x) : ""));
+              const tagIds = await ensureTags(tagNames);
               const payloadCreate: any = {
                 name: prod.name,
                 type: "simple",
@@ -291,6 +332,7 @@ export async function POST(req: NextRequest) {
                 status: prod.status ?? "publish",
                 images: sanitizeImages(prod.images),
                 categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
+                tags: tagIds.length ? tagIds.map((id) => ({ id })) : undefined,
               };
               if (!payloadCreate.images) delete payloadCreate.images;
               const createdProd = await createProduct(payloadCreate);

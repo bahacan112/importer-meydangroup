@@ -55,14 +55,22 @@ export type WooProduct = {
   stock_quantity?: number;
   manage_stock?: boolean;
   status?: "draft" | "publish";
-  images?: { src: string }[];
+  images?: { src: string; name?: string; alt?: string }[];
   categories?: { id?: number; name?: string }[];
+  tags?: { id?: number; name?: string }[];
 };
 
 export type WooCategory = {
   id?: number;
   name?: string;
   parent?: number;
+  slug?: string;
+  description?: string;
+};
+
+export type WooTag = {
+  id?: number;
+  name?: string;
   slug?: string;
   description?: string;
 };
@@ -131,5 +139,29 @@ export async function createCategory(category: WooCategory) {
   return wooFetch<WooCategory>(
     "/wp-json/wc/v3/products/categories",
     { method: "POST", body: JSON.stringify(category) }
+  );
+}
+
+export async function listAllTags(): Promise<WooTag[]> {
+  let page = 1;
+  const per_page = 100;
+  const result: WooTag[] = [];
+  while (page <= 50) {
+    const batch = await wooFetch<WooTag[]>(
+      "/wp-json/wc/v3/products/tags",
+      { method: "GET" },
+      { per_page, page }
+    );
+    result.push(...batch);
+    if (batch.length < per_page) break;
+    page++;
+  }
+  return result;
+}
+
+export async function createTag(tag: WooTag) {
+  return wooFetch<WooTag>(
+    "/wp-json/wc/v3/products/tags",
+    { method: "POST", body: JSON.stringify(tag) }
   );
 }

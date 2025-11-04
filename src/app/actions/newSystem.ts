@@ -181,6 +181,7 @@ export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, op
             status: prod.status ?? "publish",
             images: prod.images,
             categories: prod.categories,
+            tags: prod.tags,
           };
           if (options.updateImagesOnUpdate === false) delete payload.images;
           await updateProduct(current.id, payload);
@@ -201,6 +202,7 @@ export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, op
           status: prod.status ?? "publish",
           images: prod.images,
           categories: prod.categories,
+          tags: prod.tags,
         };
         const createdProd = await createProduct(payload);
         if (createdProd?.id) {

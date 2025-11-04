@@ -26,8 +26,9 @@ export type ParsedProduct = {
   stock_quantity?: number;
   manage_stock?: boolean;
   status?: "draft" | "publish";
-  images?: { src: string }[];
+  images?: { src: string; name?: string; alt?: string }[];
   categories?: { name: string }[];
+  tags?: { name: string }[];
 };
 
 function toPriceString(val: any): string | undefined {
@@ -70,6 +71,7 @@ export function mapNewSystemToProducts(raw: NewSystemRawProduct[], imageBaseUrl?
     const regular_price = toPriceString(p.FIYAT);
     const stock_quantity = toStockNumber(p.BAKIYE);
     const manage_stock = stock_quantity !== undefined;
+    const placeholder = (oem ? `${oem}-` : "") + baseName;
     const images = (p.GORSELLER || [])
       .map((src) => {
         const full = normBase ? `${normBase}${src.startsWith("/") ? src : "/" + src}` : src;
@@ -78,12 +80,12 @@ export function mapNewSystemToProducts(raw: NewSystemRawProduct[], imageBaseUrl?
           if (!normBase) {
             const u = new URL(full, "http://invalid.local");
             const pathOnly = u.pathname || full;
-            return { src: pathOnly };
+            return { src: pathOnly, name: placeholder, alt: placeholder };
           }
           const u = new URL(full);
-          return { src: u.toString() };
+          return { src: u.toString(), name: placeholder, alt: placeholder };
         } catch {
-          return { src: full };
+          return { src: full, name: placeholder, alt: placeholder };
         }
       })
       .filter((i) => i && i.src);
@@ -92,6 +94,12 @@ export function mapNewSystemToProducts(raw: NewSystemRawProduct[], imageBaseUrl?
     if (p.MARKA) categories.push({ name: String(p.MARKA) });
     if (p.MODEL) categories.push({ name: String(p.MODEL) });
     if (p.ALT_GRUP) categories.push({ name: String(p.ALT_GRUP) });
+    // Taglar: OEM, MARKA, MODEL, Ürün adı
+    const tags: { name: string }[] = [];
+    if (oem) tags.push({ name: oem });
+    if (p.MARKA) tags.push({ name: String(p.MARKA) });
+    if (p.MODEL) tags.push({ name: String(p.MODEL) });
+    if (baseName) tags.push({ name: baseName });
 
     return {
       sku,
@@ -105,6 +113,7 @@ export function mapNewSystemToProducts(raw: NewSystemRawProduct[], imageBaseUrl?
       status: "publish",
       images,
       categories,
+      tags,
     };
   });
 }
