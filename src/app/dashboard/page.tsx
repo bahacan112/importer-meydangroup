@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { getAppSettings, saveDashboardSettingsForm } from "../actions/settings";
+import { getAppSettings, saveDashboardSettingsForm, uploadXmlToPublic } from "../actions/settings";
 import { Shell } from "@/components/shell";
 
 type PreviewItem = {
@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [roundToInteger, setRoundToInteger] = useState<boolean>(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [lastSavedXmlPath, setLastSavedXmlPath] = useState<string>("");
+  const [uploading, setUploading] = useState<boolean>(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -145,6 +146,25 @@ export default function DashboardPage() {
               <div>
                 <label className="text-sm">XML Dosya Seç</label>
                 <input type="file" accept=".xml,text/xml" onChange={(e) => setXmlFile(e.target.files?.[0] ?? null)} className="border rounded w-full" />
+                <div className="flex items-center gap-2 mt-2">
+                  {xmlFile && (
+                    <Button type="button" variant="outline" disabled={uploading} onClick={async () => {
+                      try {
+                        setUploading(true);
+                        const fd = new FormData();
+                        if (xmlFile) fd.append("xml_file", xmlFile);
+                        const res = await uploadXmlToPublic(fd);
+                        setLastSavedXmlPath(res.xml_path || "");
+                        setXmlUrl("");
+                        setXmlFile(null);
+                        toast.success("XML dosyası yüklendi");
+                      } catch (e: any) {
+                        toast.error(e?.message || "XML yükleme başarısız");
+                      }
+                      setUploading(false);
+                    }}>Yükle</Button>
+                  )}
+                </div>
                 {lastSavedXmlPath && (
                   <div className="text-xs text-muted-foreground mt-1">Son kaydedilen dosya: {lastSavedXmlPath}</div>
                 )}

@@ -40,23 +40,65 @@ export async function saveAppSettingsForm(formData: FormData) {
   dbSaveApp(s);
 }
 
-// Dashboard için form tabanlı kayıt: xml_url veya xml_file gelirse dosyayı kaydeder
+// Yardımcı: public/uploads klasörü
+function getPublicUploadsDir() {
+  return path.join(process.cwd(), "public", "uploads");
+}
+
+// Önceki public dosyayı güvenli şekilde sil
+async function tryDeletePublicFile(prevPath?: string) {
+  try {
+    if (!prevPath) return;
+    // Yalnızca public/uploads altındaki dosyaları sil
+    let rel = "";
+    if (prevPath.startsWith("/uploads/")) {
+      rel = prevPath.replace(/^\//, "");
+    } else if (prevPath.includes(path.join("public", "uploads"))) {
+      // Tam yol verilmiş olabilir
+      const idx = prevPath.lastIndexOf("public");
+      rel = prevPath.slice(idx + "public/".length);
+    } else {
+      return; // URL veya farklı bir yol ise dokunma
+    }
+    const abs = path.join(process.cwd(), "public", rel);
+    await fs.unlink(abs);
+  } catch {}
+}
+
+// Dosyayı public/uploads'a yükle ve DB'de xml_path'i '/uploads/...' olarak güncelle
+export async function uploadXmlToPublic(formData: FormData) {
+  const file = formData.get("xml_file") as File | null;
+  if (!file || file.size === 0) {
+    throw new Error("Yüklenecek XML dosyası bulunamadı");
+  }
+  const current = await dbGetApp();
+  await tryDeletePublicFile(current.xml_path);
+
+  const dir = getPublicUploadsDir();
+  await fs.mkdir(dir, { recursive: true });
+  const safeName = `xml-upload-${crypto.randomUUID()}.xml`;
+  const absPath = path.join(dir, safeName);
+  const buf = Buffer.from(await file.arrayBuffer());
+  await fs.writeFile(absPath, buf);
+  const relPath = `/uploads/${safeName}`;
+
+  dbSaveApp({ xml_path: relPath } as AppSettings);
+  return { ok: true, xml_path: relPath };
+}
+
+// Dashboard için form tabanlı kayıt: xml_url veya xml_file gelirse dosyayı public'e kaydeder
 export async function saveDashboardSettingsForm(formData: FormData) {
   let xml_path: string | undefined = undefined;
   const xmlUrl = formData.get("xml_url")?.toString() || "";
   const file = formData.get("xml_file") as File | null;
-  if (xmlUrl) {
+
+  if (file && file.size > 0) {
+    const res = await uploadXmlToPublic(formData);
+    xml_path = res.xml_path;
+  } else if (xmlUrl) {
     // Basit URL validasyonu
     try { new URL(xmlUrl); } catch { throw new Error("Geçersiz XML URL"); }
     xml_path = xmlUrl;
-  } else if (file && file.size > 0) {
-    const uploads = path.join(process.cwd(), "data", "uploads");
-    await fs.mkdir(uploads, { recursive: true });
-    const fileName = `xml-upload-${crypto.randomUUID()}.xml`;
-    const filePath = path.join(uploads, fileName);
-    const buf = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(filePath, buf);
-    xml_path = filePath;
   }
 
   const s: AppSettings = {

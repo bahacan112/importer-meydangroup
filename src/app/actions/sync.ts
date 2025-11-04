@@ -38,8 +38,12 @@ async function ensureReportsDir() {
 }
 
 export async function previewXml(xmlPath?: string) {
-  const path = xmlPath || process.env.XML_PATH || "";
-  const products = parseXmlProducts(path);
+  let inputPath = xmlPath || process.env.XML_PATH || "";
+  // Public uploads relative path desteği
+  if (inputPath.startsWith("/uploads/")) {
+    inputPath = path.join(process.cwd(), "public", inputPath.replace(/^\//, ""));
+  }
+  const products = parseXmlProducts(inputPath);
   return products.slice(0, 200); // UI’de ilk 200 kaydı göster
 }
 
@@ -54,6 +58,10 @@ export async function previewXmlForm(formData: FormData) {
     inputPath = tmpFile;
   }
   if (!inputPath) inputPath = process.env.XML_PATH || "";
+  // Public uploads relative path desteği
+  if (inputPath.startsWith("/uploads/")) {
+    inputPath = path.join(process.cwd(), "public", inputPath.replace(/^\//, ""));
+  }
   // Uzak URL ise indir
   if (inputPath.startsWith("http://") || inputPath.startsWith("https://")) {
     const res = await fetch(inputPath);
@@ -69,6 +77,10 @@ export async function previewXmlForm(formData: FormData) {
 
 export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
   let inputPath = xmlPath || process.env.XML_PATH || "";
+  // Public uploads relative path desteği
+  if (inputPath.startsWith("/uploads/")) {
+    inputPath = path.join(process.cwd(), "public", inputPath.replace(/^\//, ""));
+  }
   // Uzak URL desteği: önce indir
   if (inputPath.startsWith("http://") || inputPath.startsWith("https://")) {
     const res = await fetch(inputPath);
@@ -231,6 +243,10 @@ export async function runSyncForm(formData: FormData) {
     const tmpFile = path.join(os.tmpdir(), `wc-import-sync-${crypto.randomUUID()}.xml`);
     await fs.writeFile(tmpFile, buf);
     inputPath = tmpFile;
+  }
+  // Public uploads relative path desteği
+  if (inputPath && inputPath.startsWith("/uploads/")) {
+    inputPath = path.join(process.cwd(), "public", inputPath.replace(/^\//, ""));
   }
   const opts: SyncOptions = {
     deleteMissing: !!formData.get("deleteMissing"),
