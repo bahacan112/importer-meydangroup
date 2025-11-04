@@ -36,14 +36,19 @@ export function parseXmlProducts(xmlPath: string): ParsedProduct[] {
   const mapped: ParsedProduct[] = arr
     .map((p: any) => {
       // Sık kullanılan alan adlarını normalize et
-      const sku = p.sku || p.SKU || p.productCode || p.code || p["@sku"];
-      const name = p.name || p.Name || p.title || p.Title || p["@name"];
-      const description = p.description || p.Description || p.longDescription;
-      const short_description = p.short_description || p.ShortDescription || p.shortDesc;
+      const sku =
+        p.sku || p.SKU || p.Sku || p.productCode || p.ProductCode || p.code || p.Code ||
+        p.id || p.ID || p["@sku"] || p["@SKU"] || p["@code"] || p["@id"];
+      const name =
+        p.name || p.Name || p.title || p.Title || p.productName || p.ProductName ||
+        p["@name"] || p["@Name"];
+      const description = p.description || p.Description || p.longDescription || p.desc || p.Desc;
+      const short_description =
+        p.short_description || p.ShortDescription || p.shortDesc || p.ShortDesc || p.summary || p.Summary;
       const regular_price = String(p.regular_price || p.price || p.RegularPrice || p.Price || "");
       const sale_price = p.sale_price ? String(p.sale_price) : undefined;
       const stock_quantity = p.stock_quantity ?? p.stock ?? p.StockQuantity;
-      const manage_stock = p.manage_stock ?? (stock_quantity != null);
+      const manage_stock = p.manage_stock ?? p.manageStock ?? (stock_quantity != null);
       const status = p.status || (p.active ? "publish" : "draft");
       // images ve categories bazen tek obje olarak gelebilir; güvenli şekilde diziye çevir
       const imagesRaw = p.images ?? p.Images ?? [];
@@ -57,7 +62,7 @@ export function parseXmlProducts(xmlPath: string): ParsedProduct[] {
         .map((c: any) => (typeof c === "string" ? { name: c } : { name: c?.name || c?.Name }))
         .filter((c: any) => c && c.name);
 
-      return ProductSchema.parse({
+      const candidate = {
         sku,
         name,
         description,
@@ -69,8 +74,15 @@ export function parseXmlProducts(xmlPath: string): ParsedProduct[] {
         status,
         images,
         categories,
-      });
+      };
+      const parsed = ProductSchema.safeParse(candidate);
+      if (!parsed.success) {
+        // Hatalı ürünü atla; logla ki teşhis edilebilsin
+        console.warn("XML ürün şeması hatası:", parsed.error.issues);
+        return null;
+      }
+      return parsed.data;
     })
-    .filter(Boolean);
+    .filter((p): p is ParsedProduct => !!p);
   return mapped;
 }
