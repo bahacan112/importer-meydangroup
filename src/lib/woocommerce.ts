@@ -81,12 +81,11 @@ export async function getProductBySku(sku: string) {
 }
 
 export async function listAllProducts(): Promise<WooProduct[]> {
-  // Sayfalama ile tüm ürünleri çek
+  // Sayfalama ile tüm ürünleri çek — son sayfaya kadar devam et
   let page = 1;
   const per_page = 100;
   const result: WooProduct[] = [];
-  // 50 sayfaya kadar güvenli sınır
-  while (page <= 50) {
+  while (true) {
     const batch = await wooFetch<WooProduct[]>("/wp-json/wc/v3/products", { method: "GET" }, { per_page, page });
     result.push(...batch);
     if (batch.length < per_page) break;
@@ -112,7 +111,7 @@ export async function listAllCategories(): Promise<WooCategory[]> {
   let page = 1;
   const per_page = 100;
   const result: WooCategory[] = [];
-  while (page <= 50) {
+  while (true) {
     const batch = await wooFetch<WooCategory[]>(
       "/wp-json/wc/v3/products/categories",
       { method: "GET" },
@@ -146,7 +145,7 @@ export async function listAllTags(): Promise<WooTag[]> {
   let page = 1;
   const per_page = 100;
   const result: WooTag[] = [];
-  while (page <= 50) {
+  while (true) {
     const batch = await wooFetch<WooTag[]>(
       "/wp-json/wc/v3/products/tags",
       { method: "GET" },
