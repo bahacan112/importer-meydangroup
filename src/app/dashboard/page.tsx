@@ -9,6 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { getAppSettings, saveAppSettings } from "../actions/settings";
+import { Shell } from "@/components/shell";
 
 type PreviewItem = {
   sku: string;
@@ -31,10 +33,19 @@ export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // env’den otomatik doldurma
-    if (!xmlPath && typeof window !== "undefined") {
-      // Sunucu taraflı env’i client’a aktarmamak için boş bırakıyoruz.
-    }
+    (async () => {
+      try {
+        const s = await getAppSettings();
+        if (s.xml_path) setXmlPath(s.xml_path);
+        if (typeof s.onlyCreateNew === "boolean") setOnlyCreateNew(s.onlyCreateNew);
+        if (typeof s.updateImagesOnUpdate === "boolean") setUpdateImagesOnUpdate(s.updateImagesOnUpdate);
+        if (typeof s.profitMarginPercent === "number") setProfitMarginPercent(s.profitMarginPercent);
+        if (s.applyMarginOn) setApplyMarginOn(s.applyMarginOn);
+        if (typeof s.roundToInteger === "boolean") setRoundToInteger(s.roundToInteger);
+      } catch (e) {
+        console.warn("Ayarlar yüklenemedi", e);
+      }
+    })();
   }, [xmlPath]);
 
   async function onPreview(e: FormEvent) {
@@ -105,7 +116,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <Shell>
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">WC Importer Dashboard</h1>
         <Button variant="secondary" onClick={onLogout}>Çıkış Yap</Button>
@@ -117,7 +129,17 @@ export default function DashboardPage() {
               <label className="text-sm">XML Dosya Yolu</label>
               <Input value={xmlPath} onChange={(e) => setXmlPath(e.target.value)} placeholder="C:\\Users\\baha\\Desktop\\Projeler\\importer\\mxml.xml" />
             </div>
-            <Button type="submit" disabled={loading}>Önizleme</Button>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={loading}>Önizleme</Button>
+              <Button type="button" variant="outline" disabled={loading} onClick={async () => {
+                try {
+                  await saveAppSettings({ xml_path: xmlPath, onlyCreateNew, updateImagesOnUpdate, profitMarginPercent, applyMarginOn, roundToInteger });
+                  toast.success("Ayarlar kaydedildi");
+                } catch (e: any) {
+                  toast.error(e?.message || "Ayarlar kaydedilemedi");
+                }
+              }}>Ayarları Kaydet</Button>
+            </div>
           </div>
         </form>
         <div className="flex items-center gap-2">
@@ -196,5 +218,6 @@ export default function DashboardPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </Shell>
   );
 }

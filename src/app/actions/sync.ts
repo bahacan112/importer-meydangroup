@@ -3,6 +3,8 @@ import { parseXmlProducts } from "@/lib/xml";
 import { createProduct, updateProduct, deleteProduct, listAllProducts } from "@/lib/woocommerce";
 import fs from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
+import crypto from "node:crypto";
 
 export type SyncOptions = {
   deleteMissing?: boolean;
@@ -33,8 +35,17 @@ export async function previewXml(xmlPath?: string) {
 }
 
 export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
-  const path = xmlPath || process.env.XML_PATH || "";
-  const toImport = parseXmlProducts(path);
+  let inputPath = xmlPath || process.env.XML_PATH || "";
+  // Uzak URL desteği: önce indir
+  if (inputPath.startsWith("http://") || inputPath.startsWith("https://")) {
+    const res = await fetch(inputPath);
+    if (!res.ok) throw new Error(`XML indirilemedi: ${res.status} ${res.statusText}`);
+    const xmlText = await res.text();
+    const tmpFile = path.join(os.tmpdir(), `wc-import-${crypto.randomUUID()}.xml`);
+    await fs.writeFile(tmpFile, xmlText, "utf8");
+    inputPath = tmpFile;
+  }
+  const toImport = parseXmlProducts(inputPath);
   const existing = await listAllProducts();
   const existingBySku = new Map<string, { id: number } & any>();
   existing.forEach((p) => {

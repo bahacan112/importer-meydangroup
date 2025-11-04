@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { Shell } from "@/components/shell";
 
 type Report = {
   created: number;
@@ -18,7 +19,8 @@ type Report = {
 export default async function AnalysisPage() {
   const report = await getLastReport();
   return (
-    <div className="p-6 space-y-4">
+    <Shell>
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">İçe Aktarım Analizi</h1>
         <Link href="/dashboard"><Button variant="secondary">Dashboard’a Dön</Button></Link>
@@ -128,5 +130,6 @@ export default async function AnalysisPage() {
         )}
       </Card>
     </div>
+    </Shell>
   );
 }
