@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, FormEvent } from "react";
-import { previewXml, runSync } from "../actions/sync";
+import { previewXmlForm, runSyncForm } from "../actions/sync";
 import { logout } from "../actions/auth";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { getAppSettings, saveAppSettings } from "../actions/settings";
+import { getAppSettings, saveDashboardSettingsForm } from "../actions/settings";
 import { Shell } from "@/components/shell";
 
 type PreviewItem = {
@@ -20,7 +20,8 @@ type PreviewItem = {
 };
 
 export default function DashboardPage() {
-  const [xmlPath, setXmlPath] = useState<string>(process.env.NEXT_PUBLIC_XML_PATH || "");
+  const [xmlUrl, setXmlUrl] = useState<string>(process.env.NEXT_PUBLIC_XML_PATH || "");
+  const [xmlFile, setXmlFile] = useState<File | null>(null);
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleteMissing, setDeleteMissing] = useState(false);
@@ -32,13 +33,17 @@ export default function DashboardPage() {
   const [applyMarginOn, setApplyMarginOn] = useState<"regular" | "sale" | "both">("regular");
   const [roundToInteger, setRoundToInteger] = useState<boolean>(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [lastSavedXmlPath, setLastSavedXmlPath] = useState<string>("");
   const router = useRouter();
 
   useEffect(() => {
     (async () => {
       try {
         const s = await getAppSettings();
-        if (s.xml_path) setXmlPath(s.xml_path);
+        if (s.xml_path) {
+          if (s.xml_path.startsWith("http")) setXmlUrl(s.xml_path);
+          else setLastSavedXmlPath(s.xml_path);
+        }
         if (typeof s.doCreateNew === "boolean") setDoCreateNew(s.doCreateNew);
         if (typeof s.doUpdateExisting === "boolean") setDoUpdateExisting(s.doUpdateExisting);
         if (typeof s.updateStockOnly === "boolean") setUpdateStockOnly(s.updateStockOnly);
@@ -50,17 +55,16 @@ export default function DashboardPage() {
         console.warn("Ayarlar yüklenemedi", e);
       }
     })();
-  }, [xmlPath]);
+  }, []);
 
   async function onPreview(e: FormEvent) {
     e.preventDefault();
-    if (!xmlPath) {
-      toast.error("XML dosya yolunu giriniz");
-      return;
-    }
     setLoading(true);
     try {
-      const data = await previewXml(xmlPath);
+      const fd = new FormData();
+      if (xmlUrl) fd.append("xml_url", xmlUrl);
+      if (xmlFile) fd.append("xml_file", xmlFile);
+      const data = await previewXmlForm(fd);
       const factor = 1 + (profitMarginPercent || 0) / 100;
       setItems(
         data.map((d: any) => {
@@ -96,16 +100,18 @@ export default function DashboardPage() {
   async function onSync() {
     setLoading(true);
     try {
-      const result = await runSync(xmlPath, {
-        deleteMissing,
-        doCreateNew,
-        doUpdateExisting,
-        updateStockOnly,
-        updateImagesOnUpdate,
-        profitMarginPercent,
-        applyMarginOn,
-        roundToInteger,
-      });
+      const fd = new FormData();
+      if (xmlUrl) fd.append("xml_url", xmlUrl);
+      if (xmlFile) fd.append("xml_file", xmlFile);
+      fd.append("deleteMissing", deleteMissing ? "1" : "");
+      fd.append("doCreateNew", doCreateNew ? "1" : "");
+      fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
+      fd.append("updateStockOnly", updateStockOnly ? "1" : "");
+      fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
+      fd.append("profitMarginPercent", String(profitMarginPercent));
+      fd.append("applyMarginOn", applyMarginOn);
+      fd.append("roundToInteger", roundToInteger ? "1" : "");
+      const result = await runSyncForm(fd);
       toast.success(
         `Senkronizasyon tamamlandı. Eklendi: ${result.created}, Güncellendi: ${result.updated}, Silindi: ${result.deleted}`
       );
@@ -131,15 +137,34 @@ export default function DashboardPage() {
       <Card className="p-4 space-y-3">
         <form onSubmit={onPreview} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-            <div className="md:col-span-2">
-              <label className="text-sm">XML Dosya Yolu</label>
-              <Input value={xmlPath} onChange={(e) => setXmlPath(e.target.value)} placeholder="C:\\Users\\baha\\Desktop\\Projeler\\importer\\mxml.xml" />
+            <div className="md:col-span-2 space-y-2">
+              <div>
+                <label className="text-sm">XML URL</label>
+                <Input value={xmlUrl} onChange={(e) => setXmlUrl(e.target.value)} placeholder="http://... veya https://..." />
+              </div>
+              <div>
+                <label className="text-sm">XML Dosya Seç</label>
+                <input type="file" accept=".xml,text/xml" onChange={(e) => setXmlFile(e.target.files?.[0] ?? null)} className="border rounded w-full" />
+                {lastSavedXmlPath && (
+                  <div className="text-xs text-muted-foreground mt-1">Son kaydedilen dosya: {lastSavedXmlPath}</div>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               <Button type="submit" disabled={loading}>Önizleme</Button>
               <Button type="button" variant="outline" disabled={loading} onClick={async () => {
                 try {
-                  await saveAppSettings({ xml_path: xmlPath, doCreateNew, doUpdateExisting, updateStockOnly, updateImagesOnUpdate, profitMarginPercent, applyMarginOn, roundToInteger });
+                  const fd = new FormData();
+                  if (xmlUrl) fd.append("xml_url", xmlUrl);
+                  if (xmlFile) fd.append("xml_file", xmlFile);
+                  fd.append("doCreateNew", doCreateNew ? "1" : "");
+                  fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
+                  fd.append("updateStockOnly", updateStockOnly ? "1" : "");
+                  fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
+                  fd.append("profitMarginPercent", String(profitMarginPercent));
+                  fd.append("applyMarginOn", applyMarginOn);
+                  fd.append("roundToInteger", roundToInteger ? "1" : "");
+                  const res = await saveDashboardSettingsForm(fd);
                   toast.success("Ayarlar kaydedildi");
                 } catch (e: any) {
                   toast.error(e?.message || "Ayarlar kaydedilemedi");
@@ -163,7 +188,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             <input id="updateStockOnly" type="checkbox" checked={updateStockOnly} onChange={(e) => setUpdateStockOnly(e.target.checked)} />
-            <label htmlFor="updateStockOnly" className="text-sm">Sadece stokları güncelle (mevcut ürünlerde)</label>
+            <label htmlFor="updateStockOnly" className="text-sm">Stokları güncelle</label>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -173,18 +198,18 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
           <div>
             <label className="text-sm">Kar oranı (%)</label>
-            <Input type="number" value={profitMarginPercent} onChange={(e) => setProfitMarginPercent(Number(e.target.value))} disabled={updateStockOnly} />
+            <Input type="number" value={profitMarginPercent} onChange={(e) => setProfitMarginPercent(Number(e.target.value))} />
           </div>
           <div>
             <label className="text-sm">Kar uygulanacak fiyat</label>
-            <select className="border rounded h-9 px-2" value={applyMarginOn} onChange={(e) => setApplyMarginOn(e.target.value as any)} disabled={updateStockOnly}>
+            <select className="border rounded h-9 px-2" value={applyMarginOn} onChange={(e) => setApplyMarginOn(e.target.value as any)}>
               <option value="regular">Regular price</option>
               <option value="sale">Sale price</option>
               <option value="both">Her ikisi</option>
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <input id="roundToInteger" type="checkbox" checked={roundToInteger} onChange={(e) => setRoundToInteger(e.target.checked)} disabled={updateStockOnly} />
+            <input id="roundToInteger" type="checkbox" checked={roundToInteger} onChange={(e) => setRoundToInteger(e.target.checked)} />
             <label htmlFor="roundToInteger" className="text-sm">Yuvarla (tam TL)</label>
           </div>
         </div>

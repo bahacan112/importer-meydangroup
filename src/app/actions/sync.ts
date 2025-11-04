@@ -43,6 +43,30 @@ export async function previewXml(xmlPath?: string) {
   return products.slice(0, 200); // UI’de ilk 200 kaydı göster
 }
 
+// Form tabanlı önizleme: xml_url veya xml_file alır
+export async function previewXmlForm(formData: FormData) {
+  let inputPath = String(formData.get("xml_url") || "");
+  const file = formData.get("xml_file") as File | null;
+  if (file && file.size > 0) {
+    const buf = Buffer.from(await file.arrayBuffer());
+    const tmpFile = path.join(os.tmpdir(), `wc-import-preview-${crypto.randomUUID()}.xml`);
+    await fs.writeFile(tmpFile, buf);
+    inputPath = tmpFile;
+  }
+  if (!inputPath) inputPath = process.env.XML_PATH || "";
+  // Uzak URL ise indir
+  if (inputPath.startsWith("http://") || inputPath.startsWith("https://")) {
+    const res = await fetch(inputPath);
+    if (!res.ok) throw new Error(`XML indirilemedi: ${res.status} ${res.statusText}`);
+    const xmlText = await res.text();
+    const tmpFile = path.join(os.tmpdir(), `wc-import-preview-${crypto.randomUUID()}.xml`);
+    await fs.writeFile(tmpFile, xmlText, "utf8");
+    inputPath = tmpFile;
+  }
+  const products = parseXmlProducts(inputPath);
+  return products.slice(0, 200);
+}
+
 export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
   let inputPath = xmlPath || process.env.XML_PATH || "";
   // Uzak URL desteği: önce indir
@@ -196,6 +220,29 @@ export async function runSync(xmlPath?: string, options: SyncOptions = {}) {
     console.error("Rapor yazılamadı:", e);
   }
   return report;
+}
+
+// Form tabanlı senkronizasyon: xml_url veya xml_file ve seçenekleri alır
+export async function runSyncForm(formData: FormData) {
+  let inputPath = String(formData.get("xml_url") || "");
+  const file = formData.get("xml_file") as File | null;
+  if (file && file.size > 0) {
+    const buf = Buffer.from(await file.arrayBuffer());
+    const tmpFile = path.join(os.tmpdir(), `wc-import-sync-${crypto.randomUUID()}.xml`);
+    await fs.writeFile(tmpFile, buf);
+    inputPath = tmpFile;
+  }
+  const opts: SyncOptions = {
+    deleteMissing: !!formData.get("deleteMissing"),
+    doCreateNew: !!formData.get("doCreateNew"),
+    doUpdateExisting: !!formData.get("doUpdateExisting"),
+    updateStockOnly: !!formData.get("updateStockOnly"),
+    updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : false,
+    profitMarginPercent: formData.get("profitMarginPercent") ? Number(formData.get("profitMarginPercent")) : undefined,
+    applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,
+    roundToInteger: formData.get("roundToInteger") ? true : false,
+  };
+  return runSync(inputPath, opts);
 }
 
 export async function getLastReport(): Promise<SyncReport> {

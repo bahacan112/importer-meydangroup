@@ -1,5 +1,8 @@
 "use server";
 import { getAppSettings as dbGetApp, saveAppSettings as dbSaveApp, getWooSettings as dbGetWoo, saveWooSettings as dbSaveWoo, AppSettings, WooSettings } from "@/lib/db";
+import fs from "node:fs/promises";
+import path from "node:path";
+import crypto from "node:crypto";
 
 export async function getAppSettings(): Promise<AppSettings> {
   return dbGetApp();
@@ -35,6 +38,39 @@ export async function saveAppSettingsForm(formData: FormData) {
     try { new URL(s.xml_path); } catch { throw new Error("Geçersiz XML URL formatı"); }
   }
   dbSaveApp(s);
+}
+
+// Dashboard için form tabanlı kayıt: xml_url veya xml_file gelirse dosyayı kaydeder
+export async function saveDashboardSettingsForm(formData: FormData) {
+  let xml_path: string | undefined = undefined;
+  const xmlUrl = formData.get("xml_url")?.toString() || "";
+  const file = formData.get("xml_file") as File | null;
+  if (xmlUrl) {
+    // Basit URL validasyonu
+    try { new URL(xmlUrl); } catch { throw new Error("Geçersiz XML URL"); }
+    xml_path = xmlUrl;
+  } else if (file && file.size > 0) {
+    const uploads = path.join(process.cwd(), "data", "uploads");
+    await fs.mkdir(uploads, { recursive: true });
+    const fileName = `xml-upload-${crypto.randomUUID()}.xml`;
+    const filePath = path.join(uploads, fileName);
+    const buf = Buffer.from(await file.arrayBuffer());
+    await fs.writeFile(filePath, buf);
+    xml_path = filePath;
+  }
+
+  const s: AppSettings = {
+    xml_path,
+    doCreateNew: formData.get("doCreateNew") ? true : undefined,
+    doUpdateExisting: formData.get("doUpdateExisting") ? true : undefined,
+    updateStockOnly: formData.get("updateStockOnly") ? true : undefined,
+    updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : false,
+    profitMarginPercent: formData.get("profitMarginPercent") ? Number(formData.get("profitMarginPercent")) : undefined,
+    applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,
+    roundToInteger: formData.get("roundToInteger") ? true : false,
+  };
+  dbSaveApp(s);
+  return { ok: true, xml_path };
 }
 
 export async function saveWooSettingsForm(formData: FormData) {
