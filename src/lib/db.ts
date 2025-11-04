@@ -48,6 +48,9 @@ export type AppSettings = {
   profitMarginPercent?: number;
   applyMarginOn?: "regular" | "sale" | "both";
   roundToInteger?: boolean;
+  // Yeni Sistem için ayarlar
+  newApiUrl?: string;
+  newImageBaseUrl?: string;
 };
 
 export type WooSettings = {
@@ -62,6 +65,8 @@ function ensureAppSettingsColumns() {
   if (!has("doCreateNew")) db.exec("ALTER TABLE app_settings ADD COLUMN doCreateNew INTEGER DEFAULT 1");
   if (!has("doUpdateExisting")) db.exec("ALTER TABLE app_settings ADD COLUMN doUpdateExisting INTEGER DEFAULT 1");
   if (!has("updateStockOnly")) db.exec("ALTER TABLE app_settings ADD COLUMN updateStockOnly INTEGER DEFAULT 0");
+  if (!has("newApiUrl")) db.exec("ALTER TABLE app_settings ADD COLUMN newApiUrl TEXT");
+  if (!has("newImageBaseUrl")) db.exec("ALTER TABLE app_settings ADD COLUMN newImageBaseUrl TEXT");
 }
 
 export function getAppSettings(): AppSettings {
@@ -78,6 +83,8 @@ export function getAppSettings(): AppSettings {
     profitMarginPercent: row?.profitMarginPercent ?? 0,
     applyMarginOn: (row?.applyMarginOn as any) ?? "regular",
     roundToInteger: row?.roundToInteger !== undefined ? !!row.roundToInteger : true,
+    newApiUrl: row?.newApiUrl ?? undefined,
+    newImageBaseUrl: row?.newImageBaseUrl ?? undefined,
   };
 }
 
@@ -92,7 +99,9 @@ export function saveAppSettings(s: AppSettings) {
     updateImagesOnUpdate = COALESCE(?, updateImagesOnUpdate),
     profitMarginPercent = COALESCE(?, profitMarginPercent),
     applyMarginOn = COALESCE(?, applyMarginOn),
-    roundToInteger = COALESCE(?, roundToInteger)
+    roundToInteger = COALESCE(?, roundToInteger),
+    newApiUrl = COALESCE(?, newApiUrl),
+    newImageBaseUrl = COALESCE(?, newImageBaseUrl)
     WHERE id = 1
   `).run(
     s.xml_path ?? null,
@@ -103,7 +112,9 @@ export function saveAppSettings(s: AppSettings) {
     s.updateImagesOnUpdate === undefined ? null : (s.updateImagesOnUpdate ? 1 : 0),
     s.profitMarginPercent ?? null,
     s.applyMarginOn ?? null,
-    s.roundToInteger === undefined ? null : (s.roundToInteger ? 1 : 0)
+    s.roundToInteger === undefined ? null : (s.roundToInteger ? 1 : 0),
+    s.newApiUrl ?? null,
+    s.newImageBaseUrl ?? null
   );
 }
 

@@ -15,6 +15,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <NavItem href="/analysis" label="Analiz" />
           <NavItem href="/settings" label="Ayarlar" />
           <NavItem href="/operations" label="Toplu İşlemler" />
+          <NavItem href="/new-system" label="Yeni Sistem" />
         </nav>
       </aside>
       <div className="flex-1 flex flex-col">
@@ -25,6 +26,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Link href="/analysis"><Button variant="outline" size="sm">Analiz</Button></Link>
             <Link href="/settings"><Button variant="outline" size="sm">Ayarlar</Button></Link>
             <Link href="/operations"><Button variant="default" size="sm">Toplu İşlemler</Button></Link>
+            <Link href="/new-system"><Button variant="outline" size="sm">Yeni Sistem</Button></Link>
           </div>
         </header>
         <main className="p-4">{children}</main>
