@@ -158,6 +158,25 @@ export async function POST(req: NextRequest) {
     tagMap.set(tagNorm(t.name), t.id!);
   }
 
+      // Tag isimlerini güvenli ve sınırlı tutmak için basit filtre
+      function sanitizeTagNames(names: string[]): string[] {
+        const out: string[] = [];
+        const seen = new Set<string>();
+        for (const name of names) {
+          const n = (name || "").trim();
+          if (!n) continue;
+          // Çok uzun etiketleri ve aşırı kelimeli etiketleri atla
+          if (n.length > 40) continue;
+          if (n.split(/\s+/).length > 6) continue;
+          const key = n.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(n);
+          if (out.length >= 5) break; // Ürün başına üst sınır
+        }
+        return out;
+      }
+
       // Hız için raw veriyi SKU ile eşleştir
       const rawBySku = new Map<string, any>();
       (validRaw.length ? validRaw : raw).forEach((r: any) => {
@@ -310,8 +329,12 @@ export async function POST(req: NextRequest) {
               const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
                 .map((x: any) => (x ? String(x) : ""));
               const catIds = await ensureCategoryChain(chain);
-              const tagNames = [rawItem?.OEM, rawItem?.MARKA, rawItem?.MODEL, rawItem?.STOK_ADI]
-                .map((x: any) => (x ? String(x) : ""));
+              const tagNames = sanitizeTagNames([
+                rawItem?.OEM,
+                rawItem?.MARKA,
+                rawItem?.MODEL,
+                // Ürün adına göre otomatik tag oluşturmayı kapattık (çok uzun ve benzersiz isimler oluşturuyor)
+              ].map((x: any) => (x ? String(x) : "")));
               const tagIds = await ensureTags(tagNames);
               const payloadCreate: any = {
                 name: prod.name,
