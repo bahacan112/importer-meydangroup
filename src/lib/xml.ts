@@ -45,12 +45,17 @@ export function parseXmlProducts(xmlPath: string): ParsedProduct[] {
       const stock_quantity = p.stock_quantity ?? p.stock ?? p.StockQuantity;
       const manage_stock = p.manage_stock ?? (stock_quantity != null);
       const status = p.status || (p.active ? "publish" : "draft");
-      const images = (p.images || p.Images || [])
-        .map((i: any) => (typeof i === "string" ? { src: i } : { src: i.src || i.url }))
-        .filter((i: any) => i.src);
-      const categories = (p.categories || p.Categories || [])
-        .map((c: any) => (typeof c === "string" ? { name: c } : { name: c.name || c.Name }))
-        .filter((c: any) => c.name);
+      // images ve categories bazen tek obje olarak gelebilir; güvenli şekilde diziye çevir
+      const imagesRaw = p.images ?? p.Images ?? [];
+      const imagesArr = Array.isArray(imagesRaw) ? imagesRaw : imagesRaw ? [imagesRaw] : [];
+      const images = imagesArr
+        .map((i: any) => (typeof i === "string" ? { src: i } : { src: i?.src || i?.url }))
+        .filter((i: any) => i && i.src);
+      const categoriesRaw = p.categories ?? p.Categories ?? [];
+      const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw : categoriesRaw ? [categoriesRaw] : [];
+      const categories = categoriesArr
+        .map((c: any) => (typeof c === "string" ? { name: c } : { name: c?.name || c?.Name }))
+        .filter((c: any) => c && c.name);
 
       return ProductSchema.parse({
         sku,
