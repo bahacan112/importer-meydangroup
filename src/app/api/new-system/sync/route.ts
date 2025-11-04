@@ -217,6 +217,15 @@ export async function POST(req: NextRequest) {
       let updated = 0;
       let deleted = 0;
       let processed = 0;
+      const deferredCreates: {
+        sku: string;
+        name: string;
+        payload: any;
+        regular_price?: string;
+        sale_price?: string;
+        stock_quantity?: number;
+        manage_stock?: boolean;
+      }[] = [];
 
       const factor = 1 + ((options.profitMarginPercent || 0) / 100);
       const applyMarginOn = options.applyMarginOn || "regular";
@@ -355,10 +364,29 @@ export async function POST(req: NextRequest) {
                         createdProd = await createProduct(withoutImages);
                       } catch (e2: any) {
                         await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                        // İkinci tur için ertele
+                        deferredCreates.push({
+                          sku: prod.sku,
+                          name: prod.name,
+                          payload: payloadCreate,
+                          regular_price,
+                          sale_price,
+                          stock_quantity: prod.stock_quantity,
+                          manage_stock: prod.manage_stock ?? false,
+                        });
                       }
                     }
                   } catch (err: any) {
                     await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                    deferredCreates.push({
+                      sku: prod.sku,
+                      name: prod.name,
+                      payload: payloadCreate,
+                      regular_price,
+                      sale_price,
+                      stock_quantity: prod.stock_quantity,
+                      manage_stock: prod.manage_stock ?? false,
+                    });
                   }
                 } else {
                   throw e;
@@ -366,9 +394,9 @@ export async function POST(req: NextRequest) {
               }
               if (createdProd?.id) {
                 existingBySku.set(prod.sku, { id: createdProd.id, sku: prod.sku } as any);
+                created++;
+                await write({ type: "created_product", sku: prod.sku, name: prod.name });
               }
-              created++;
-              await write({ type: "created_product", sku: prod.sku, name: prod.name });
             }
           }
           processed++;
@@ -383,6 +411,42 @@ export async function POST(req: NextRequest) {
           } else {
             await write({ type: "error", sku: prod.sku, name: prod.name, error: msg });
           }
+        }
+      }
+
+      // Ertelenen create denemeleri: kuyruğu ikinci turda hafif beklemeyle tekrar işle
+      for (const item of deferredCreates) {
+        try {
+          await new Promise((r) => setTimeout(r, 750));
+          const maybe = await getProductBySku(item.sku);
+          if (maybe?.id) {
+            const payloadSP: any = {
+              regular_price: item.regular_price,
+              sale_price: item.sale_price,
+              manage_stock: item.manage_stock ?? false,
+              stock_quantity: item.stock_quantity,
+            };
+            await updateProduct(maybe.id, payloadSP);
+            await write({ type: "updated_stock_price_deferred", sku: item.sku, id: maybe.id, name: item.name });
+            continue;
+          }
+          const withoutImages = { ...item.payload };
+          delete withoutImages.images;
+          let createdDeferred;
+          try {
+            createdDeferred = await createProduct(withoutImages);
+          } catch (e2: any) {
+            const msg2 = e2?.message || String(e2);
+            await write({ type: "skip_conflict_deferred", sku: item.sku, name: item.name, error: msg2 });
+            continue;
+          }
+          if (createdDeferred?.id) {
+            existingBySku.set(item.sku, { id: createdDeferred.id, sku: item.sku } as any);
+            created++;
+            await write({ type: "created_product_deferred", sku: item.sku, name: item.name });
+          }
+        } catch (err: any) {
+          await write({ type: "error", sku: item.sku, name: item.name, error: err?.message || String(err) });
         }
       }
 
