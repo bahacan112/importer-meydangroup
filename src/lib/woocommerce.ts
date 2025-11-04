@@ -124,3 +124,12 @@ export async function deleteCategory(id: number) {
     { force: true }
   );
 }
+
+export async function createCategory(category: WooCategory) {
+  // Create a category (requires manage terms capability).
+  // Payload typically: { name: string, parent?: number }
+  return wooFetch<WooCategory>(
+    "/wp-json/wc/v3/products/categories",
+    { method: "POST", body: JSON.stringify(category) }
+  );
+}

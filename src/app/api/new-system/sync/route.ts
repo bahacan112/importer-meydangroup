@@ -11,6 +11,8 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  listAllCategories,
+  createCategory,
 } from "@/lib/woocommerce";
 
 export const runtime = "nodejs";
@@ -124,6 +126,48 @@ export async function POST(req: NextRequest) {
       const existingBySku = new Map<string, { id: number } & any>();
       existing.forEach((p) => { if (p.sku) existingBySku.set(p.sku, p as any); });
 
+      // Kategori hiyerarşisini kurmak için mevcut kategorileri çek ve isim+ebeveyn eşleşmesi ile haritalandır
+      const existingCats = await listAllCategories();
+      const norm = (s?: string) => (s || "").trim().toLowerCase();
+      const catKey = (parentId: number | undefined, name: string) => `${parentId || 0}::${norm(name)}`;
+      const catMap = new Map<string, number>();
+      for (const c of existingCats) {
+        if (!c.name) continue;
+        catMap.set(catKey(c.parent, c.name), c.id!);
+      }
+
+      // Hız için raw veriyi SKU ile eşleştir
+      const rawBySku = new Map<string, any>();
+      (validRaw.length ? validRaw : raw).forEach((r: any) => {
+        if (r && r.KOD) rawBySku.set(String(r.KOD), r);
+      });
+
+      async function ensureCategoryChain(names: string[]): Promise<number[]> {
+        const ids: number[] = [];
+        let parentId: number | undefined = undefined;
+        for (const name of names) {
+          const n = name?.trim();
+          if (!n) continue;
+          const key = catKey(parentId, n);
+          let id = catMap.get(key);
+          if (!id) {
+            try {
+              const created = await createCategory({ name: n, parent: parentId });
+              id = created.id!;
+              catMap.set(key, id);
+              await write({ type: "category_created", name: n, parent: parentId || 0, id });
+            } catch (e: any) {
+              await write({ type: "error", error: `Kategori oluşturulamadı: ${n} - ${e?.message || e}` });
+              // Kategori olmadan devam edelim
+              continue;
+            }
+          }
+          ids.push(id);
+          parentId = id;
+        }
+        return ids;
+      }
+
       let created = 0;
       let updated = 0;
       let deleted = 0;
@@ -179,6 +223,11 @@ export async function POST(req: NextRequest) {
               updated++;
               await write({ type: "updated_stock", sku: prod.sku, id: current.id, name: prod.name });
             } else {
+              // Ürün özelinde kategori zincirini hazırla
+              const rawItem = rawBySku.get(prod.sku);
+              const chain = [rawItem?.ANA_GRUP, rawItem?.ALT_GRUP, rawItem?.MARKA, rawItem?.MODEL]
+                .map((x: any) => (x ? String(x) : ""));
+              const catIds = await ensureCategoryChain(chain);
               const payload: any = {
                 name: prod.name,
                 description: prod.description,
@@ -190,7 +239,7 @@ export async function POST(req: NextRequest) {
                 stock_quantity: prod.stock_quantity,
                 status: prod.status ?? "publish",
                 images: sanitizeImages(prod.images),
-                categories: prod.categories,
+                categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
               };
               if (options.updateImagesOnUpdate === false || !payload.images) delete payload.images;
               await updateProduct(current.id, payload);
@@ -201,6 +250,10 @@ export async function POST(req: NextRequest) {
             if (updateStockOnly || !doCreateNew) {
               await write({ type: "skip_create", sku: prod.sku, name: prod.name });
             } else {
+              const rawItem = rawBySku.get(prod.sku);
+              const chain = [rawItem?.ANA_GRUP, rawItem?.ALT_GRUP, rawItem?.MARKA, rawItem?.MODEL]
+                .map((x: any) => (x ? String(x) : ""));
+              const catIds = await ensureCategoryChain(chain);
               const payloadCreate: any = {
                 name: prod.name,
                 type: "simple",
@@ -213,7 +266,7 @@ export async function POST(req: NextRequest) {
                 stock_quantity: prod.stock_quantity,
                 status: prod.status ?? "publish",
                 images: sanitizeImages(prod.images),
-                categories: prod.categories,
+                categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
               };
               if (!payloadCreate.images) delete payloadCreate.images;
               await createProduct(payloadCreate);
