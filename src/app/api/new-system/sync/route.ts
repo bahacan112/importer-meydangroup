@@ -437,36 +437,56 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Ertelenen create denemeleri: kuyruğu ikinci turda hafif beklemeyle tekrar işle
+      // Ertelenen create denemeleri: ikinci turda daha uzun beklemeli ve birkaç kez deneyerek işle
+      const deferredBaseWaitMs = 2000; // WooCommerce'in SKU işleme kuyrukları için daha geniş bekleme
+      const deferredMaxAttempts = 4;   // En fazla 4 deneme (toplam ~15s bekleme ile)
       for (const item of deferredCreates) {
         try {
-          await new Promise((r) => setTimeout(r, 750));
-          const maybe = await getProductBySku(item.sku);
-          if (maybe?.id) {
-            const payloadSP: any = {
-              regular_price: item.regular_price,
-              sale_price: item.sale_price,
-              manage_stock: item.manage_stock ?? false,
-              stock_quantity: item.stock_quantity,
-            };
-            await updateProduct(maybe.id, payloadSP);
-            await write({ type: "updated_stock_price_deferred", sku: item.sku, id: maybe.id, name: item.name });
-            continue;
+          let attempt = 0;
+          let done = false;
+          while (!done && attempt < deferredMaxAttempts) {
+            attempt++;
+            // Her deneme öncesi artan bekleme (exponential backoff)
+            const waitMs = deferredBaseWaitMs * Math.pow(2, attempt - 1);
+            await new Promise((r) => setTimeout(r, waitMs));
+            const maybe = await getProductBySku(item.sku);
+            if (maybe?.id) {
+              const payloadSP: any = {
+                regular_price: item.regular_price,
+                sale_price: item.sale_price,
+                manage_stock: item.manage_stock ?? false,
+                stock_quantity: item.stock_quantity,
+              };
+              await updateProduct(maybe.id, payloadSP);
+              await write({ type: "updated_stock_price_deferred", sku: item.sku, id: maybe.id, name: item.name });
+              done = true;
+              break;
+            }
+            const withoutImages = { ...item.payload };
+            delete withoutImages.images;
+            try {
+              const createdDeferred = await createProduct(withoutImages);
+              if (createdDeferred?.id) {
+                existingBySku.set(item.sku, { id: createdDeferred.id, sku: item.sku } as any);
+                created++;
+                await write({ type: "created_product_deferred", sku: item.sku, name: item.name });
+                done = true;
+                break;
+              }
+            } catch (e2: any) {
+              const msg2 = e2?.message || String(e2);
+              // "zaten işleniyor" türü hatalarda bir sonraki denemeye geç, diğer hatalarda bırak
+              if (/already|i\u015fleniyor|processing/i.test(msg2)) {
+                await write({ type: "retry_conflict_deferred", sku: item.sku, name: item.name, attempt, waitMs, error: msg2 });
+                continue;
+              } else {
+                await write({ type: "skip_conflict_deferred", sku: item.sku, name: item.name, error: msg2 });
+                break;
+              }
+            }
           }
-          const withoutImages = { ...item.payload };
-          delete withoutImages.images;
-          let createdDeferred;
-          try {
-            createdDeferred = await createProduct(withoutImages);
-          } catch (e2: any) {
-            const msg2 = e2?.message || String(e2);
-            await write({ type: "skip_conflict_deferred", sku: item.sku, name: item.name, error: msg2 });
-            continue;
-          }
-          if (createdDeferred?.id) {
-            existingBySku.set(item.sku, { id: createdDeferred.id, sku: item.sku } as any);
-            created++;
-            await write({ type: "created_product_deferred", sku: item.sku, name: item.name });
+          if (!done) {
+            await write({ type: "giveup_deferred", sku: item.sku, name: item.name, attempts: deferredMaxAttempts });
           }
         } catch (err: any) {
           await write({ type: "error", sku: item.sku, name: item.name, error: err?.message || String(err) });
