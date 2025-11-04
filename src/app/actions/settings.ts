@@ -3,6 +3,7 @@ import { getAppSettings as dbGetApp, saveAppSettings as dbSaveApp, getWooSetting
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { listAllProducts, deleteProduct, listAllCategories, deleteCategory } from "@/lib/woocommerce";
 
 export async function getAppSettings(): Promise<AppSettings> {
   return dbGetApp();
@@ -128,4 +129,51 @@ export async function saveWooSettingsForm(formData: FormData) {
     }
   }
   dbSaveWoo(s);
+}
+
+// Tehlikeli işlemler: tüm ürünleri ve kategorileri sil
+export async function deleteAllProductsAndCategories() {
+  // Ürünleri sil
+  const products = await listAllProducts();
+  let deletedProducts = 0;
+  const productErrors: string[] = [];
+  for (const p of products) {
+    if (!p.id) continue;
+    try {
+      await deleteProduct(p.id);
+      deletedProducts++;
+    } catch (e: any) {
+      productErrors.push(`Ürün ${p.id} silinemedi: ${e?.message || String(e)}`);
+    }
+  }
+
+  // Kategorileri sil (mümkünse çocuklardan başlayarak)
+  const categories = await listAllCategories();
+  // Çocukları önce denemek için parent id'ye göre ters sırala
+  const sorted = categories.sort((a, b) => {
+    const ap = a.parent ?? 0;
+    const bp = b.parent ?? 0;
+    return bp - ap;
+  });
+  let deletedCategories = 0;
+  const categoryErrors: string[] = [];
+  for (const c of sorted) {
+    if (!c.id) continue;
+    try {
+      await deleteCategory(c.id);
+      deletedCategories++;
+    } catch (e: any) {
+      categoryErrors.push(`Kategori ${c.id} silinemedi: ${e?.message || String(e)}`);
+    }
+  }
+
+  return {
+    deletedProducts,
+    deletedCategories,
+    errors: [...productErrors, ...categoryErrors],
+  };
+}
+
+export async function deleteAllForm(_formData: FormData) {
+  await deleteAllProductsAndCategories();
 }

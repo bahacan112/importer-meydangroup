@@ -59,6 +59,14 @@ export type WooProduct = {
   categories?: { id?: number; name?: string }[];
 };
 
+export type WooCategory = {
+  id?: number;
+  name?: string;
+  parent?: number;
+  slug?: string;
+  description?: string;
+};
+
 export async function getProductBySku(sku: string) {
   const data = await wooFetch<WooProduct[]>("/wp-json/wc/v3/products", { method: "GET" }, { sku, per_page: 1 });
   return data[0];
@@ -90,4 +98,29 @@ export async function updateProduct(id: number, product: Partial<WooProduct>) {
 export async function deleteProduct(id: number) {
   // Force = true ile kalıcı sil; isterseniz force=false ile çöpe taşıma
   return wooFetch<{ deleted: boolean }>(`/wp-json/wc/v3/products/${id}`, { method: "DELETE" }, { force: true });
+}
+
+export async function listAllCategories(): Promise<WooCategory[]> {
+  let page = 1;
+  const per_page = 100;
+  const result: WooCategory[] = [];
+  while (page <= 50) {
+    const batch = await wooFetch<WooCategory[]>(
+      "/wp-json/wc/v3/products/categories",
+      { method: "GET" },
+      { per_page, page }
+    );
+    result.push(...batch);
+    if (batch.length < per_page) break;
+    page++;
+  }
+  return result;
+}
+
+export async function deleteCategory(id: number) {
+  return wooFetch<{ deleted: boolean }>(
+    `/wp-json/wc/v3/products/categories/${id}`,
+    { method: "DELETE" },
+    { force: true }
+  );
 }

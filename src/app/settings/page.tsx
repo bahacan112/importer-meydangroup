@@ -1,5 +1,5 @@
 import { Shell } from "@/components/shell";
-import { getWooSettings, saveWooSettingsForm } from "../actions/settings";
+import { getWooSettings, saveWooSettingsForm, deleteAllForm } from "../actions/settings";
 import { Button } from "@/components/ui/button";
 
 export default async function SettingsPage() {
@@ -23,6 +23,14 @@ export default async function SettingsPage() {
               <input name="consumer_secret" defaultValue={woo.consumer_secret || process.env.WC_CONSUMER_SECRET || ""} className="mt-1 w-full border rounded px-2 py-1" />
             </div>
             <Button type="submit">Kaydet</Button>
+          </form>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-red-600">Tehlikeli İşlemler</h2>
+          <p className="text-sm text-red-500">Bu işlem tüm ürünleri ve kategorileri kalıcı olarak siler. Geri alınamaz!</p>
+          <form action={deleteAllForm} className="space-y-2">
+            <Button type="submit" variant="destructive">Tüm Ürünleri ve Kategorileri Sil</Button>
           </form>
         </section>
       </div>
