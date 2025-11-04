@@ -90,7 +90,16 @@ export async function runNewSystemSyncForm(formData: FormData) {
 export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, options: SyncOptions = {}) {
   if (!apiUrl) throw new Error("API URL gerekli");
   const raw = await fetchNewSystemProducts(apiUrl);
-  const toImport = mapNewSystemToProducts(raw, imageBaseUrl);
+  const toImportAll = mapNewSystemToProducts(raw, imageBaseUrl);
+  // Aynı SKU birden fazla kez gelirse yinelenen create denemelerini ve çakışmaları önlemek için tekilleştir.
+  const seen = new Set<string>();
+  const toImport = toImportAll.filter((p) => {
+    if (!p.sku) return false;
+    const key = String(p.sku);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const existing = await listAllProducts();
   const existingBySku = new Map<string, { id: number } & any>();
   existing.forEach((p) => {
@@ -193,7 +202,10 @@ export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, op
           images: prod.images,
           categories: prod.categories,
         };
-        await createProduct(payload);
+        const createdProd = await createProduct(payload);
+        if (createdProd?.id) {
+          existingBySku.set(prod.sku, { id: createdProd.id, sku: prod.sku });
+        }
         created++;
         createdSkus.push(prod.sku);
       }

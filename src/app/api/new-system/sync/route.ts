@@ -122,7 +122,16 @@ export async function POST(req: NextRequest) {
         });
       } catch {}
 
-      const toImport = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
+      const toImportAll = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
+      // Yinelenen SKU’ları tekilleştirerek concurrent create denemelerini önle
+      const seen = new Set<string>();
+      const toImport = toImportAll.filter((p) => {
+        if (!p.sku) return false;
+        const key = String(p.sku);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
       await write({ type: "info", message: `Toplam içe aktarılacak: ${toImport.length}` });
       const existing = await listAllProducts();
       const existingBySku = new Map<string, { id: number } & any>();
@@ -284,7 +293,10 @@ export async function POST(req: NextRequest) {
                 categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
               };
               if (!payloadCreate.images) delete payloadCreate.images;
-              await createProduct(payloadCreate);
+              const createdProd = await createProduct(payloadCreate);
+              if (createdProd?.id) {
+                existingBySku.set(prod.sku, { id: createdProd.id, sku: prod.sku } as any);
+              }
               created++;
               await write({ type: "created_product", sku: prod.sku, name: prod.name });
             }
@@ -294,7 +306,13 @@ export async function POST(req: NextRequest) {
           const speed = elapsedMs > 0 ? (processed / (elapsedMs / 1000)) : 0;
           await write({ type: "progress", processed, total: toImport.length, elapsedMs, speed });
         } catch (e: any) {
-          await write({ type: "error", sku: prod.sku, name: prod.name, error: e?.message || String(e) });
+          const msg = e?.message || String(e);
+          // Woo özel hata: "stok kodu ... zaten işleniyor" durumunda create çakışması var; uyarı verip devam edelim
+          if (msg.includes("zaten i") || msg.toLowerCase().includes("processing")) {
+            await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: msg });
+          } else {
+            await write({ type: "error", sku: prod.sku, name: prod.name, error: msg });
+          }
         }
       }
 
