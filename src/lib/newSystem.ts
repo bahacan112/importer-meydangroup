@@ -88,7 +88,9 @@ export function mapNewSystemToProducts(raw: NewSystemRawProduct[], imageBaseUrl?
       })
       .filter((i) => i && i.src);
     const categories: { name: string }[] = [];
-    if (p.ANA_GRUP) categories.push({ name: String(p.ANA_GRUP) });
+    // Kullanıcı talebine göre kategori zinciri: MARKA > MODEL > ALT_GRUP
+    if (p.MARKA) categories.push({ name: String(p.MARKA) });
+    if (p.MODEL) categories.push({ name: String(p.MODEL) });
     if (p.ALT_GRUP) categories.push({ name: String(p.ALT_GRUP) });
 
     return {

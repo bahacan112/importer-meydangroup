@@ -238,7 +238,8 @@ export async function POST(req: NextRequest) {
             } else {
               // Ürün özelinde kategori zincirini hazırla
               const rawItem = rawBySku.get(prod.sku);
-              const chain = [rawItem?.ANA_GRUP, rawItem?.ALT_GRUP, rawItem?.MARKA, rawItem?.MODEL]
+              // Kullanıcı talebi: kategori zinciri MARKA > MODEL > ALT_GRUP
+              const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
                 .map((x: any) => (x ? String(x) : ""));
               const catIds = await ensureCategoryChain(chain);
               const payload: any = {
@@ -264,7 +265,8 @@ export async function POST(req: NextRequest) {
               await write({ type: "skip_create", sku: prod.sku, name: prod.name });
             } else {
               const rawItem = rawBySku.get(prod.sku);
-              const chain = [rawItem?.ANA_GRUP, rawItem?.ALT_GRUP, rawItem?.MARKA, rawItem?.MODEL]
+              // Kullanıcı talebi: kategori zinciri MARKA > MODEL > ALT_GRUP
+              const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
                 .map((x: any) => (x ? String(x) : ""));
               const catIds = await ensureCategoryChain(chain);
               const payloadCreate: any = {
