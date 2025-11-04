@@ -39,6 +39,7 @@ export default function NewSystemPage() {
   const [total, setTotal] = useState<number>(0);
   const [elapsedMs, setElapsedMs] = useState<number>(0);
   const [speed, setSpeed] = useState<number>(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -147,6 +148,93 @@ export default function NewSystemPage() {
     }
   }
 
+  async function onUploadAndSync() {
+    try {
+      if (!selectedFile) {
+        toast.error("Lütfen bir JSON dosyası seçin");
+        return;
+      }
+      setLoading(true);
+      setSyncRunning(true);
+      setSyncLabel("Dosya yükleniyor...");
+      setProcessed(0);
+      setTotal(0);
+      setElapsedMs(0);
+      setSpeed(0);
+
+      // 1) Dosyayı yükle
+      const formUpload = new FormData();
+      formUpload.append("file", selectedFile);
+      const upRes = await fetch("/api/new-system/upload", { method: "POST", body: formUpload });
+      const upJson = await upRes.json();
+      if (!upRes.ok || !upJson.ok) {
+        throw new Error(upJson.error || "Dosya yüklenemedi");
+      }
+      const filePath = upJson.file_path as string;
+      setSyncLabel("Dosyadan senkronizasyon başlatılıyor...");
+
+      // 2) Dosyadan senkronizasyonu başlat (stream)
+      const fd = new FormData();
+      fd.append("file_path", filePath);
+      fd.append("image_base_url", imageBaseUrl);
+      fd.append("deleteMissing", deleteMissing ? "1" : "");
+      fd.append("doCreateNew", doCreateNew ? "1" : "");
+      fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
+      fd.append("updateStockOnly", updateStockOnly ? "1" : "");
+      fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
+      fd.append("profitMarginPercent", String(profitMarginPercent || 0));
+      fd.append("applyMarginOn", applyMarginOn);
+      fd.append("roundToInteger", roundToInteger ? "1" : "");
+      const res = await fetch("/api/new-system/sync", { method: "POST", body: fd });
+      if (!res.body) throw new Error("Canlı akış başlatılamadı");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split("\n").filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          try {
+            const evt = JSON.parse(line);
+            if (evt.type === "start") {
+              setSyncLabel("Senkronizasyon başlatıldı");
+            } else if (evt.type === "saved_file") {
+              setSyncLabel(`Kaydedilen dosya: ${evt.file} (toplam ${evt.count})`);
+            } else if (evt.type === "created_product") {
+              setSyncLabel(`Oluşturulan: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "updated_product") {
+              setSyncLabel(`Güncellenen: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "updated_stock") {
+              setSyncLabel(`Stok güncellendi: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "deleted_missing") {
+              setSyncLabel(`Eksik silindi: ${evt.name} (SKU: ${evt.sku})`);
+            } else if (evt.type === "progress") {
+              setProcessed(evt.processed || 0);
+              setTotal(evt.total || 0);
+              setElapsedMs(evt.elapsedMs || 0);
+              setSpeed(evt.speed || 0);
+            } else if (evt.type === "done") {
+              setSyncLabel(`Tamamlandı: +${evt.created} / ~${evt.updated} / -${evt.deleted}`);
+              toast.success(`Senkronizasyon tamamlandı: Eklenen ${evt.created}, Güncellenen ${evt.updated}, Silinen ${evt.deleted}`);
+            } else if (evt.type === "error") {
+              setSyncLabel(`Hata: ${evt.error}`);
+            } else if (evt.type === "fatal") {
+              setSyncLabel(`Kritik hata: ${evt.message}`);
+            }
+          } catch {}
+        }
+      }
+      router.push("/analysis");
+    } catch (e: any) {
+      toast.error(e?.message || "Senkronizasyon hata");
+    } finally {
+      setLoading(false);
+      setConfirmOpen(false);
+      setSyncRunning(false);
+    }
+  }
+
   return (
     <Shell>
     <div className="space-y-4">
@@ -239,7 +327,7 @@ export default function NewSystemPage() {
       </div>
 
       {/* Her zaman görünür canlı durum etiketi ve senkronizasyon butonu */}
-      <Card className="p-4 flex items-center justify-between">
+      <Card className="p-4 flex flex-col gap-3">
         <div className="text-xs text-gray-600">
           <span className="font-medium">Durum:</span> {syncLabel || "Beklemede"}
           {total > 0 && (
@@ -252,14 +340,22 @@ export default function NewSystemPage() {
             <span className="ml-2">| {speed.toFixed(1)} kayıt/sn</span>
           )}
         </div>
-        <Button
-          variant="destructive"
-          onClick={() => setConfirmOpen(true)}
-          disabled={loading || syncRunning || !apiUrl}
-          title={!apiUrl ? "API URL gerekli" : undefined}
-        >
-          {syncRunning ? "Senkronizasyon yapılıyor..." : "Senkronize Et"}
-        </Button>
+        <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
+          <Button
+            variant="destructive"
+            onClick={() => setConfirmOpen(true)}
+            disabled={loading || syncRunning || !apiUrl}
+            title={!apiUrl ? "API URL gerekli" : undefined}
+          >
+            {syncRunning ? "Senkronizasyon yapılıyor..." : "API'den Kaydet ve Senkronize Et"}
+          </Button>
+          <div className="flex items-center gap-2">
+            <input type="file" accept=".json,application/json" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+            <Button variant="outline" disabled={loading || syncRunning || !selectedFile} onClick={onUploadAndSync}>
+              {syncRunning ? "Senkronizasyon yapılıyor..." : "Dosya Yükle ve Senkronize Et"}
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {items.length > 0 && (

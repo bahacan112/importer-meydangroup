@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import fs from "fs/promises";
+import path from "path";
 import {
   fetchNewSystemProducts,
   mapNewSystemToProducts,
@@ -44,6 +46,7 @@ export async function POST(req: NextRequest) {
       const formData = await req.formData();
       const apiUrl = String(formData.get("api_url") || "");
       const imageBaseUrl = String(formData.get("image_base_url") || "");
+      const filePath = String(formData.get("file_path") || "");
       const options: SyncOptions = {
         deleteMissing: !!formData.get("deleteMissing"),
         doCreateNew: !!formData.get("doCreateNew"),
@@ -54,10 +57,51 @@ export async function POST(req: NextRequest) {
         applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,
         roundToInteger: formData.get("roundToInteger") ? true : false,
       };
-
-      if (!apiUrl) throw new Error("API URL gerekli");
       await write({ type: "start", at: startTs, message: "Senkronizasyon başlatıldı" });
-      const raw = await fetchNewSystemProducts(apiUrl);
+
+      // JSON kaydetme için dizini hazırla
+      const uploadsDir = path.join(process.cwd(), "public", "uploads", "new-system");
+      await fs.mkdir(uploadsDir, { recursive: true }).catch(() => {});
+
+      let raw: any[] = [];
+      let savedFilename: string | undefined;
+
+      if (filePath) {
+        // Dosyadan çalış
+        const safeRel = filePath.replace(/^\\+|^\/+/, "");
+        const absolute = path.join(process.cwd(), "public", safeRel);
+        const data = await fs.readFile(absolute, "utf-8");
+        raw = JSON.parse(data);
+        await write({ type: "info", message: `Dosyadan senkronizasyon: ${safeRel}` });
+      } else {
+        // API'den çek, önce JSON'a kaydet
+        if (!apiUrl) throw new Error("API URL gerekli");
+        raw = await fetchNewSystemProducts(apiUrl);
+        const ts = new Date();
+        const y = ts.getFullYear();
+        const m = String(ts.getMonth() + 1).padStart(2, "0");
+        const d = String(ts.getDate()).padStart(2, "0");
+        const hh = String(ts.getHours()).padStart(2, "0");
+        const mm = String(ts.getMinutes()).padStart(2, "0");
+        const ss = String(ts.getSeconds()).padStart(2, "0");
+        const filename = `new-system-${y}${m}${d}-${hh}${mm}${ss}.json`;
+        const abs = path.join(uploadsDir, filename);
+        await fs.writeFile(abs, JSON.stringify(raw, null, 2), "utf-8");
+        savedFilename = path.join("uploads", "new-system", filename).replace(/\\/g, "/");
+
+        // Eski JSON'ları sil (aynı klasördeki .json dosyaları)
+        try {
+          const entries = await fs.readdir(uploadsDir, { withFileTypes: true });
+          for (const e of entries) {
+            if (e.isFile() && e.name.endsWith(".json") && e.name !== filename) {
+              await fs.unlink(path.join(uploadsDir, e.name)).catch(() => {});
+            }
+          }
+        } catch {}
+
+        await write({ type: "saved_file", file: savedFilename, count: raw.length });
+      }
+
       const toImport = mapNewSystemToProducts(raw, imageBaseUrl);
       await write({ type: "info", message: `Toplam içe aktarılacak: ${toImport.length}` });
       const existing = await listAllProducts();
@@ -179,7 +223,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      await write({ type: "done", created, updated, deleted, total: toImport.length });
+      await write({ type: "done", created, updated, deleted, total: toImport.length, file: savedFilename });
     } catch (err: any) {
       await write({ type: "fatal", message: String(err?.message || err) });
     } finally {
