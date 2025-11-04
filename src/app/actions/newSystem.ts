@@ -52,20 +52,20 @@ export async function previewNewSystemForm(formData: FormData) {
 }
 
 export async function saveNewSystemSettingsForm(formData: FormData) {
-  const api_url = String(formData.get("api_url") || "");
-  const image_base_url = String(formData.get("image_base_url") || "");
-  const s = await getAppSettings();
+  const api_url = String(formData.get("api_url") || "").trim();
+  const image_base_url = String(formData.get("image_base_url") || "").trim();
+  // Checkbox alanları formda işaretli değilse hiç gönderilmediği için,
+  // mevcut değerleri korumak yerine açıkça true/false kaydedelim.
   await saveAppSettings({
-    ...s,
     newApiUrl: api_url || undefined,
     newImageBaseUrl: image_base_url || undefined,
-    doCreateNew: formData.get("doCreateNew") ? true : s.doCreateNew,
-    doUpdateExisting: formData.get("doUpdateExisting") ? true : s.doUpdateExisting,
-    updateStockOnly: formData.get("updateStockOnly") ? true : s.updateStockOnly,
-    updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : s.updateImagesOnUpdate,
-    profitMarginPercent: formData.get("profitMarginPercent") ? Number(formData.get("profitMarginPercent")) : s.profitMarginPercent,
-    applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || s.applyMarginOn,
-    roundToInteger: formData.get("roundToInteger") ? true : s.roundToInteger,
+    doCreateNew: formData.get("doCreateNew") ? true : false,
+    doUpdateExisting: formData.get("doUpdateExisting") ? true : false,
+    updateStockOnly: formData.get("updateStockOnly") ? true : false,
+    updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : false,
+    profitMarginPercent: Number(formData.get("profitMarginPercent") || 0),
+    applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || "regular",
+    roundToInteger: formData.get("roundToInteger") ? true : false,
   });
   return { ok: true };
 }
