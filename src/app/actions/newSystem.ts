@@ -10,7 +10,8 @@ export type SyncOptions = {
   deleteMissing?: boolean;
   doCreateNew?: boolean;
   doUpdateExisting?: boolean;
-  updateStockOnly?: boolean;
+  updateStockOnly?: boolean; // legacy
+  updateStockAndPriceOnly?: boolean;
   updateImagesOnUpdate?: boolean;
   profitMarginPercent?: number; // %
   applyMarginOn?: "regular" | "sale" | "both";
@@ -61,7 +62,7 @@ export async function saveNewSystemSettingsForm(formData: FormData) {
     newImageBaseUrl: image_base_url || undefined,
     doCreateNew: formData.get("doCreateNew") ? true : false,
     doUpdateExisting: formData.get("doUpdateExisting") ? true : false,
-    updateStockOnly: formData.get("updateStockOnly") ? true : false,
+    updateStockAndPriceOnly: formData.get("updateStockAndPriceOnly") ? true : false,
     updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : false,
     profitMarginPercent: Number(formData.get("profitMarginPercent") || 0),
     applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || "regular",
@@ -77,7 +78,7 @@ export async function runNewSystemSyncForm(formData: FormData) {
     deleteMissing: !!formData.get("deleteMissing"),
     doCreateNew: !!formData.get("doCreateNew"),
     doUpdateExisting: !!formData.get("doUpdateExisting"),
-    updateStockOnly: !!formData.get("updateStockOnly"),
+    updateStockAndPriceOnly: !!formData.get("updateStockAndPriceOnly"),
     updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : false,
     profitMarginPercent: formData.get("profitMarginPercent") ? Number(formData.get("profitMarginPercent")) : undefined,
     applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,
@@ -108,6 +109,7 @@ export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, op
   const applyMarginOn = options.applyMarginOn || "regular";
   const roundToInteger = options.roundToInteger ?? true;
   const updateStockOnly = !!options.updateStockOnly;
+  const updateStockAndPriceOnly = !!options.updateStockAndPriceOnly;
   const doCreateNew = options.doCreateNew ?? true;
   const doUpdateExisting = options.doUpdateExisting ?? true;
 
@@ -147,6 +149,16 @@ export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, op
           await updateProduct(current.id, payloadStock);
           updated++;
           updatedSkus.push(prod.sku);
+        } else if (updateStockAndPriceOnly) {
+          const payloadSP: any = {
+            regular_price,
+            sale_price,
+            manage_stock: prod.manage_stock ?? false,
+            stock_quantity: prod.stock_quantity,
+          };
+          await updateProduct(current.id, payloadSP);
+          updated++;
+          updatedSkus.push(prod.sku);
         } else {
           const payload: any = {
             name: prod.name,
@@ -167,7 +179,7 @@ export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, op
           updatedSkus.push(prod.sku);
         }
       } else {
-        if (!doCreateNew) continue;
+        if (updateStockOnly || updateStockAndPriceOnly || !doCreateNew) continue;
         const payload: any = {
           name: prod.name,
           description: prod.description,

@@ -44,6 +44,7 @@ export type AppSettings = {
   doCreateNew?: boolean; // yeni ürünleri ekle
   doUpdateExisting?: boolean; // mevcut olanları güncelle
   updateStockOnly?: boolean; // sadece stok güncelle
+  updateStockAndPriceOnly?: boolean; // sadece stok ve fiyat güncelle
   updateImagesOnUpdate?: boolean;
   profitMarginPercent?: number;
   applyMarginOn?: "regular" | "sale" | "both";
@@ -65,6 +66,7 @@ function ensureAppSettingsColumns() {
   if (!has("doCreateNew")) db.exec("ALTER TABLE app_settings ADD COLUMN doCreateNew INTEGER DEFAULT 1");
   if (!has("doUpdateExisting")) db.exec("ALTER TABLE app_settings ADD COLUMN doUpdateExisting INTEGER DEFAULT 1");
   if (!has("updateStockOnly")) db.exec("ALTER TABLE app_settings ADD COLUMN updateStockOnly INTEGER DEFAULT 0");
+  if (!has("updateStockAndPriceOnly")) db.exec("ALTER TABLE app_settings ADD COLUMN updateStockAndPriceOnly INTEGER DEFAULT 0");
   if (!has("newApiUrl")) db.exec("ALTER TABLE app_settings ADD COLUMN newApiUrl TEXT");
   if (!has("newImageBaseUrl")) db.exec("ALTER TABLE app_settings ADD COLUMN newImageBaseUrl TEXT");
 }
@@ -79,6 +81,7 @@ export function getAppSettings(): AppSettings {
     doCreateNew: row?.doCreateNew !== undefined ? !!row.doCreateNew : (row?.onlyCreateNew !== undefined ? !row.onlyCreateNew : true),
     doUpdateExisting: row?.doUpdateExisting !== undefined ? !!row.doUpdateExisting : (row?.onlyCreateNew !== undefined ? !row.onlyCreateNew : true),
     updateStockOnly: row?.updateStockOnly !== undefined ? !!row.updateStockOnly : false,
+    updateStockAndPriceOnly: row?.updateStockAndPriceOnly !== undefined ? !!row.updateStockAndPriceOnly : false,
     updateImagesOnUpdate: row?.updateImagesOnUpdate !== undefined ? !!row.updateImagesOnUpdate : true,
     profitMarginPercent: row?.profitMarginPercent ?? 0,
     applyMarginOn: (row?.applyMarginOn as any) ?? "regular",
@@ -96,6 +99,7 @@ export function saveAppSettings(s: AppSettings) {
     doCreateNew = COALESCE(?, doCreateNew),
     doUpdateExisting = COALESCE(?, doUpdateExisting),
     updateStockOnly = COALESCE(?, updateStockOnly),
+    updateStockAndPriceOnly = COALESCE(?, updateStockAndPriceOnly),
     updateImagesOnUpdate = COALESCE(?, updateImagesOnUpdate),
     profitMarginPercent = COALESCE(?, profitMarginPercent),
     applyMarginOn = COALESCE(?, applyMarginOn),
@@ -109,6 +113,7 @@ export function saveAppSettings(s: AppSettings) {
     s.doCreateNew === undefined ? null : (s.doCreateNew ? 1 : 0),
     s.doUpdateExisting === undefined ? null : (s.doUpdateExisting ? 1 : 0),
     s.updateStockOnly === undefined ? null : (s.updateStockOnly ? 1 : 0),
+    s.updateStockAndPriceOnly === undefined ? null : (s.updateStockAndPriceOnly ? 1 : 0),
     s.updateImagesOnUpdate === undefined ? null : (s.updateImagesOnUpdate ? 1 : 0),
     s.profitMarginPercent ?? null,
     s.applyMarginOn ?? null,

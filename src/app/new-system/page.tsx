@@ -27,7 +27,7 @@ export default function NewSystemPage() {
   const [deleteMissing, setDeleteMissing] = useState(false);
   const [doCreateNew, setDoCreateNew] = useState(true);
   const [doUpdateExisting, setDoUpdateExisting] = useState(true);
-  const [updateStockOnly, setUpdateStockOnly] = useState(false);
+  const [updateStockAndPriceOnly, setUpdateStockAndPriceOnly] = useState(false);
   const [updateImagesOnUpdate, setUpdateImagesOnUpdate] = useState(true);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(0);
   const [applyMarginOn, setApplyMarginOn] = useState<"regular" | "sale" | "both">("regular");
@@ -50,7 +50,7 @@ export default function NewSystemPage() {
         if (s.newImageBaseUrl) setImageBaseUrl(s.newImageBaseUrl);
         if (typeof s.doCreateNew === "boolean") setDoCreateNew(s.doCreateNew);
         if (typeof s.doUpdateExisting === "boolean") setDoUpdateExisting(s.doUpdateExisting);
-        if (typeof s.updateStockOnly === "boolean") setUpdateStockOnly(s.updateStockOnly);
+        if (typeof s.updateStockAndPriceOnly === "boolean") setUpdateStockAndPriceOnly(s.updateStockAndPriceOnly);
         if (typeof s.updateImagesOnUpdate === "boolean") setUpdateImagesOnUpdate(s.updateImagesOnUpdate);
         if (typeof s.profitMarginPercent === "number") setProfitMarginPercent(s.profitMarginPercent);
         if (s.applyMarginOn) setApplyMarginOn(s.applyMarginOn);
@@ -93,7 +93,7 @@ export default function NewSystemPage() {
       fd.append("deleteMissing", deleteMissing ? "1" : "");
       fd.append("doCreateNew", doCreateNew ? "1" : "");
       fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
-      fd.append("updateStockOnly", updateStockOnly ? "1" : "");
+      fd.append("updateStockAndPriceOnly", updateStockAndPriceOnly ? "1" : "");
       fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
       fd.append("profitMarginPercent", String(profitMarginPercent || 0));
       fd.append("applyMarginOn", applyMarginOn);
@@ -180,7 +180,7 @@ export default function NewSystemPage() {
       fd.append("deleteMissing", deleteMissing ? "1" : "");
       fd.append("doCreateNew", doCreateNew ? "1" : "");
       fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
-      fd.append("updateStockOnly", updateStockOnly ? "1" : "");
+      fd.append("updateStockAndPriceOnly", updateStockAndPriceOnly ? "1" : "");
       fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
       fd.append("profitMarginPercent", String(profitMarginPercent || 0));
       fd.append("applyMarginOn", applyMarginOn);
@@ -269,8 +269,8 @@ export default function NewSystemPage() {
               <label htmlFor="doUpdateExisting" className="text-sm">Mevcut olanları güncelle</label>
             </div>
             <div className="flex items-center gap-2">
-              <input id="updateStockOnly" type="checkbox" checked={updateStockOnly} onChange={(e) => setUpdateStockOnly(e.target.checked)} />
-              <label htmlFor="updateStockOnly" className="text-sm">Sadece stokları güncelle</label>
+              <input id="updateStockAndPriceOnly" type="checkbox" checked={updateStockAndPriceOnly} onChange={(e) => setUpdateStockAndPriceOnly(e.target.checked)} />
+              <label htmlFor="updateStockAndPriceOnly" className="text-sm">Sadece stok ve fiyatları güncelle</label>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -306,7 +306,7 @@ export default function NewSystemPage() {
                 fd.append("image_base_url", imageBaseUrl);
                 fd.append("doCreateNew", doCreateNew ? "1" : "");
                 fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
-                fd.append("updateStockOnly", updateStockOnly ? "1" : "");
+      fd.append("updateStockAndPriceOnly", updateStockAndPriceOnly ? "1" : "");
                 fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
                 fd.append("profitMarginPercent", String(profitMarginPercent || 0));
                 fd.append("applyMarginOn", applyMarginOn);

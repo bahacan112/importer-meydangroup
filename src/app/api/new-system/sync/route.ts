@@ -21,7 +21,8 @@ type SyncOptions = {
   deleteMissing?: boolean;
   doCreateNew?: boolean;
   doUpdateExisting?: boolean;
-  updateStockOnly?: boolean;
+  updateStockOnly?: boolean; // legacy
+  updateStockAndPriceOnly?: boolean;
   updateImagesOnUpdate?: boolean;
   profitMarginPercent?: number; // %
   applyMarginOn?: "regular" | "sale" | "both";
@@ -54,7 +55,8 @@ export async function POST(req: NextRequest) {
         deleteMissing: !!formData.get("deleteMissing"),
         doCreateNew: !!formData.get("doCreateNew"),
         doUpdateExisting: !!formData.get("doUpdateExisting"),
-        updateStockOnly: !!formData.get("updateStockOnly"),
+        updateStockOnly: !!formData.get("updateStockOnly"), // backward compatibility
+        updateStockAndPriceOnly: !!formData.get("updateStockAndPriceOnly"),
         updateImagesOnUpdate: formData.get("updateImagesOnUpdate") ? true : false,
         profitMarginPercent: formData.get("profitMarginPercent") ? Number(formData.get("profitMarginPercent")) : undefined,
         applyMarginOn: (formData.get("applyMarginOn")?.toString() as any) || undefined,
@@ -177,6 +179,7 @@ export async function POST(req: NextRequest) {
       const applyMarginOn = options.applyMarginOn || "regular";
       const roundToInteger = options.roundToInteger ?? true;
       const updateStockOnly = !!options.updateStockOnly;
+      const updateStockAndPriceOnly = !!options.updateStockAndPriceOnly;
       const doCreateNew = options.doCreateNew ?? true;
       const doUpdateExisting = options.doUpdateExisting ?? true;
 
@@ -222,6 +225,16 @@ export async function POST(req: NextRequest) {
               await updateProduct(current.id, payloadStock);
               updated++;
               await write({ type: "updated_stock", sku: prod.sku, id: current.id, name: prod.name });
+            } else if (updateStockAndPriceOnly) {
+              const payloadSP: any = {
+                regular_price,
+                sale_price,
+                manage_stock: prod.manage_stock ?? false,
+                stock_quantity: prod.stock_quantity,
+              };
+              await updateProduct(current.id, payloadSP);
+              updated++;
+              await write({ type: "updated_stock_price", sku: prod.sku, id: current.id, name: prod.name });
             } else {
               // Ürün özelinde kategori zincirini hazırla
               const rawItem = rawBySku.get(prod.sku);
@@ -247,7 +260,7 @@ export async function POST(req: NextRequest) {
               await write({ type: "updated_product", sku: prod.sku, id: current.id, name: prod.name });
             }
           } else {
-            if (updateStockOnly || !doCreateNew) {
+            if (updateStockOnly || updateStockAndPriceOnly || !doCreateNew) {
               await write({ type: "skip_create", sku: prod.sku, name: prod.name });
             } else {
               const rawItem = rawBySku.get(prod.sku);
