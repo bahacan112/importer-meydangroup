@@ -347,7 +347,15 @@ export async function POST(req: NextRequest) {
                       await write({ type: "updated_stock_price", sku: prod.sku, id: maybe.id, name: prod.name });
                       createdProd = maybe as any;
                     } else {
-                      await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                      // Kısa bir bekleme sonrası tek seferlik yeniden dene (görselsiz) 
+                      await new Promise((r) => setTimeout(r, 500));
+                      try {
+                        const withoutImages = { ...payloadCreate };
+                        delete withoutImages.images;
+                        createdProd = await createProduct(withoutImages);
+                      } catch (e2: any) {
+                        await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                      }
                     }
                   } catch (err: any) {
                     await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
