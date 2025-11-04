@@ -4,6 +4,7 @@ import path from "path";
 import {
   fetchNewSystemProducts,
   mapNewSystemToProducts,
+  NewSystemProductSchema,
 } from "@/lib/newSystem";
 import {
   listAllProducts,
@@ -102,7 +103,22 @@ export async function POST(req: NextRequest) {
         await write({ type: "saved_file", file: savedFilename, count: raw.length });
       }
 
-      const toImport = mapNewSystemToProducts(raw, imageBaseUrl);
+      // Dosyadan okunmuş veriyi de şema ile doğrula; geçersiz kayıtları dışla
+      let validRaw: any[] = [];
+      try {
+        validRaw = (raw || [])
+          .map((p) => {
+            const parsed = NewSystemProductSchema.safeParse(p);
+            return parsed.success ? parsed.data : null;
+          })
+          .filter((x) => !!x);
+        await write({
+          type: "info",
+          message: `Dosya kayıtları: ${raw?.length || 0}, Geçerli: ${validRaw.length}, Geçersiz: ${(raw?.length || 0) - validRaw.length}`,
+        });
+      } catch {}
+
+      const toImport = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
       await write({ type: "info", message: `Toplam içe aktarılacak: ${toImport.length}` });
       const existing = await listAllProducts();
       const existingBySku = new Map<string, { id: number } & any>();
@@ -126,6 +142,14 @@ export async function POST(req: NextRequest) {
         if (Number.isNaN(n)) return value;
         let v = n * factor;
         return roundToInteger ? String(Math.round(v)) : v.toFixed(2);
+      };
+
+      const sanitizeImages = (images?: { src: string }[]) => {
+        if (!images || images.length === 0) return undefined;
+        const cleaned = images.filter(
+          (i) => i && typeof i.src === "string" && /^https?:\/\//i.test(i.src)
+        );
+        return cleaned.length > 0 ? cleaned : undefined;
       };
 
       for (const prod of toImport) {
@@ -165,10 +189,10 @@ export async function POST(req: NextRequest) {
                 manage_stock: prod.manage_stock ?? false,
                 stock_quantity: prod.stock_quantity,
                 status: prod.status ?? "publish",
-                images: prod.images,
+                images: sanitizeImages(prod.images),
                 categories: prod.categories,
               };
-              if (options.updateImagesOnUpdate === false) delete payload.images;
+              if (options.updateImagesOnUpdate === false || !payload.images) delete payload.images;
               await updateProduct(current.id, payload);
               updated++;
               await write({ type: "updated_product", sku: prod.sku, id: current.id, name: prod.name });
@@ -188,9 +212,10 @@ export async function POST(req: NextRequest) {
                 manage_stock: prod.manage_stock ?? false,
                 stock_quantity: prod.stock_quantity,
                 status: prod.status ?? "publish",
-                images: prod.images,
+                images: sanitizeImages(prod.images),
                 categories: prod.categories,
               };
+              if (!payloadCreate.images) delete payloadCreate.images;
               await createProduct(payloadCreate);
               created++;
               await write({ type: "created_product", sku: prod.sku, name: prod.name });
