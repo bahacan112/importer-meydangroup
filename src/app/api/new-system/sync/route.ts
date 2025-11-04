@@ -279,7 +279,8 @@ export async function POST(req: NextRequest) {
               await updateProduct(current.id, payloadStock);
               updated++;
               await write({ type: "updated_stock", sku: prod.sku, id: current.id, name: prod.name });
-            } else if (updateStockAndPriceOnly) {
+            } else {
+              // Varsayılan davranış: mevcut üründe sadece stok ve fiyat güncelle
               const payloadSP: any = {
                 regular_price,
                 sale_price,
@@ -289,48 +290,6 @@ export async function POST(req: NextRequest) {
               await updateProduct(current.id, payloadSP);
               updated++;
               await write({ type: "updated_stock_price", sku: prod.sku, id: current.id, name: prod.name });
-            } else {
-              // Ürün özelinde kategori zincirini hazırla
-              const rawItem = rawBySku.get(prod.sku);
-              // Kullanıcı talebi: kategori zinciri MARKA > MODEL > ALT_GRUP
-              const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
-                .map((x: any) => (x ? String(x) : ""));
-              const catIds = await ensureCategoryChain(chain);
-              // Taglar: OEM, MARKA, MODEL, Ürün adı
-              const tagNames = [rawItem?.OEM, rawItem?.MARKA, rawItem?.MODEL, rawItem?.STOK_ADI]
-                .map((x: any) => (x ? String(x) : ""));
-              const tagIds = await ensureTags(tagNames);
-              const payload: any = {
-                name: prod.name,
-                description: prod.description,
-                short_description: prod.short_description,
-                regular_price,
-                sale_price,
-                sku: prod.sku,
-                manage_stock: prod.manage_stock ?? false,
-                stock_quantity: prod.stock_quantity,
-                status: prod.status ?? "publish",
-                images: sanitizeImages(prod.images),
-                categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
-                tags: tagIds.length ? tagIds.map((id) => ({ id })) : undefined,
-              };
-              if (options.updateImagesOnUpdate === false || !payload.images) delete payload.images;
-              try {
-                await updateProduct(current.id, payload);
-              } catch (e: any) {
-                const emsg = e?.message || String(e);
-                if (payload.images && /image|görsel|media|forbidden|upload/i.test(emsg)) {
-                  // Görsel kaynak sorunu; görseller olmadan tekrar dene
-                  const withoutImages = { ...payload };
-                  delete withoutImages.images;
-                  await write({ type: "image_upload_failed", sku: prod.sku, id: current.id, error: emsg });
-                  await updateProduct(current.id, withoutImages);
-                } else {
-                  throw e;
-                }
-              }
-              updated++;
-              await write({ type: "updated_product", sku: prod.sku, id: current.id, name: prod.name });
             }
           } else {
             if (updateStockOnly || updateStockAndPriceOnly || !doCreateNew) {

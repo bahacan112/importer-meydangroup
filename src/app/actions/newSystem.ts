@@ -150,44 +150,16 @@ export async function runNewSystemSync(apiUrl: string, imageBaseUrl?: string, op
         if (!doUpdateExisting) {
           continue;
         }
-        if (updateStockOnly) {
-          const payloadStock: any = {
-            manage_stock: prod.manage_stock ?? false,
-            stock_quantity: prod.stock_quantity,
-          };
-          await updateProduct(current.id, payloadStock);
-          updated++;
-          updatedSkus.push(prod.sku);
-        } else if (updateStockAndPriceOnly) {
-          const payloadSP: any = {
-            regular_price,
-            sale_price,
-            manage_stock: prod.manage_stock ?? false,
-            stock_quantity: prod.stock_quantity,
-          };
-          await updateProduct(current.id, payloadSP);
-          updated++;
-          updatedSkus.push(prod.sku);
-        } else {
-          const payload: any = {
-            name: prod.name,
-            description: prod.description,
-            short_description: prod.short_description,
-            regular_price,
-            sale_price,
-            sku: prod.sku,
-            manage_stock: prod.manage_stock ?? false,
-            stock_quantity: prod.stock_quantity,
-            status: prod.status ?? "publish",
-            images: prod.images,
-            categories: prod.categories,
-            tags: prod.tags,
-          };
-          if (options.updateImagesOnUpdate === false) delete payload.images;
-          await updateProduct(current.id, payload);
-          updated++;
-          updatedSkus.push(prod.sku);
-        }
+        // Varsayılan: mevcut üründe sadece stok ve fiyat güncelle
+        const payloadSP: any = {
+          regular_price,
+          sale_price,
+          manage_stock: prod.manage_stock ?? false,
+          stock_quantity: prod.stock_quantity,
+        };
+        await updateProduct(current.id, payloadSP);
+        updated++;
+        updatedSkus.push(prod.sku);
       } else {
         if (updateStockOnly || updateStockAndPriceOnly || !doCreateNew) continue;
         const payload: any = {
