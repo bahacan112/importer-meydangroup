@@ -11,6 +11,7 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  getProductBySku,
   listAllCategories,
   createCategory,
   listAllTags,
@@ -329,6 +330,28 @@ export async function POST(req: NextRequest) {
                   delete withoutImages.images;
                   await write({ type: "image_upload_failed", sku: prod.sku, error: emsg });
                   createdProd = await createProduct(withoutImages);
+                } else if (/already|i\u015fleniyor|processing/i.test(emsg)) {
+                  // WooCommerce aynı SKU için create işlemini arka planda yürütüyor olabilir.
+                  // Ürün oluşmuşsa stok/fiyat güncelleyip devam edelim; oluşmadıysa çakışmayı raporlayıp sonraki ürüne geçelim.
+                  try {
+                    const maybe = await getProductBySku(prod.sku);
+                    if (maybe?.id) {
+                      existingBySku.set(prod.sku, { id: maybe.id, sku: prod.sku } as any);
+                      const payloadSP: any = {
+                        regular_price,
+                        sale_price,
+                        manage_stock: prod.manage_stock ?? false,
+                        stock_quantity: prod.stock_quantity,
+                      };
+                      await updateProduct(maybe.id, payloadSP);
+                      await write({ type: "updated_stock_price", sku: prod.sku, id: maybe.id, name: prod.name });
+                      createdProd = maybe as any;
+                    } else {
+                      await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                    }
+                  } catch (err: any) {
+                    await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                  }
                 } else {
                   throw e;
                 }
