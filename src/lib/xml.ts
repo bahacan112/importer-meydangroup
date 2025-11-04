@@ -98,9 +98,25 @@ export function parseXmlProducts(xmlPath: string): ParsedProduct[] {
       const description = p.description || p.Description || p.longDescription || p.desc || p.Desc;
       const short_description =
         p.short_description || p.ShortDescription || p.shortDesc || p.ShortDesc || p.summary || p.Summary;
-      const regular_price = String(p.regular_price || p.price || p.RegularPrice || p.Price || "");
-      const sale_price = p.sale_price ? String(p.sale_price) : undefined;
-      const stock_quantity = p.stock_quantity ?? p.stock ?? p.StockQuantity;
+      // Fiyat alanları farklı isimlerle gelebilir: fiyat/fiyatk/price
+      const normalizePriceString = (val: any): string | undefined => {
+        if (val === null || val === undefined) return undefined;
+        let s = String(val).trim();
+        // Türkçe format: 50,65 -> 50.65
+        s = s.replace(/\./g, ""); // binlik ayraç . ise kaldır
+        s = s.replace(/,/g, ".");
+        // sadece sayı ve nokta kalsın
+        s = s.replace(/[^0-9.]/g, "");
+        return s || undefined;
+      };
+      const priceRaw = pickField(p, ["regular_price", "price", "Price", "fiyat", "Fiyat", "fiyatk", "Fiyatk", "FiyatK"]); 
+      const saleRaw = pickField(p, ["sale_price", "salePrice", "fiyatk", "Fiyatk", "FiyatK"]);
+      const regular_price = normalizePriceString(priceRaw);
+      const sale_price = normalizePriceString(saleRaw);
+
+      // Stok alanları: stock_quantity/stock/quantity/adet/miktar
+      const stockRaw = pickField(p, ["stock_quantity", "stock", "StockQuantity", "quantity", "Quantity", "adet", "Adet", "miktar", "Miktar"]);
+      const stock_quantity = stockRaw != null ? Number(String(stockRaw).replace(/[^0-9-]/g, "")) : undefined;
       const manage_stock = p.manage_stock ?? p.manageStock ?? (stock_quantity != null);
       const status = p.status || (p.active ? "publish" : "draft");
       // images ve categories bazen tek obje olarak gelebilir; güvenli şekilde diziye çevir
