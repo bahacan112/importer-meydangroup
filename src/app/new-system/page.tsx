@@ -238,26 +238,34 @@ export default function NewSystemPage() {
         <label htmlFor="deleteMissing" className="text-sm">Yeni sistemde olmayan ürünleri sil</label>
       </div>
 
+      {/* Her zaman görünür canlı durum etiketi ve senkronizasyon butonu */}
+      <Card className="p-4 flex items-center justify-between">
+        <div className="text-xs text-gray-600">
+          <span className="font-medium">Durum:</span> {syncLabel || "Beklemede"}
+          {total > 0 && (
+            <span className="ml-2">| {processed}/{total} ({Math.floor((processed/Math.max(total,1))*100)}%)</span>
+          )}
+          {elapsedMs > 0 && (
+            <span className="ml-2">| {Math.round(elapsedMs/1000)} sn</span>
+          )}
+          {speed > 0 && (
+            <span className="ml-2">| {speed.toFixed(1)} kayıt/sn</span>
+          )}
+        </div>
+        <Button
+          variant="destructive"
+          onClick={() => setConfirmOpen(true)}
+          disabled={loading || syncRunning || !apiUrl}
+          title={!apiUrl ? "API URL gerekli" : undefined}
+        >
+          {syncRunning ? "Senkronizasyon yapılıyor..." : "Senkronize Et"}
+        </Button>
+      </Card>
+
       {items.length > 0 && (
         <Card className="p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="font-medium">Önizleme ({items.length})</div>
-            <div className="flex flex-col items-end gap-1">
-              {/* Canlı label */}
-              <div className="text-xs text-gray-600">
-                <span className="font-medium">Durum:</span> {syncLabel || "Beklemede"}
-                {total > 0 && (
-                  <span className="ml-2">| {processed}/{total} ({Math.floor((processed/Math.max(total,1))*100)}%)</span>
-                )}
-                {elapsedMs > 0 && (
-                  <span className="ml-2">| {Math.round(elapsedMs/1000)} sn</span>
-                )}
-                {speed > 0 && (
-                  <span className="ml-2">| {speed.toFixed(1)} kayıt/sn</span>
-                )}
-              </div>
-              <Button variant="destructive" onClick={() => setConfirmOpen(true)} disabled={loading || syncRunning}>{syncRunning ? "Senkronizasyon yapılıyor..." : "Senkronize Et"}</Button>
-            </div>
           </div>
           <div className="overflow-auto">
             <Table>
