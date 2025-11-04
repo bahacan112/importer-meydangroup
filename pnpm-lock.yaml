@@ -51,6 +51,9 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12
     devDependencies:
+      '@rushstack/eslint-patch':
+        specifier: ^1.14.1
+        version: 1.14.1
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.1.16
