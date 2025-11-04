@@ -33,11 +33,45 @@ export type ParsedProduct = {
 
 function toPriceString(val: any): string | undefined {
   if (val === null || val === undefined) return undefined;
+  // Sayısal tip ise doğrudan kullan
+  if (typeof val === "number") {
+    if (!isFinite(val)) return undefined;
+    return String(val);
+  }
   let s = String(val).trim();
-  s = s.replace(/\./g, "");
-  s = s.replace(/,/g, ".");
-  s = s.replace(/[^0-9.]/g, "");
-  return s || undefined;
+  if (!s) return undefined;
+  // Boşluk ve para birimi gibi karakterleri temizle
+  s = s.replace(/\s+/g, "");
+  // Hem ',' hem '.' varsa, son görünen ayıracı ondalık kabul ederek normalize et
+  if (s.includes(',') && s.includes('.')) {
+    const commaLast = s.lastIndexOf(',');
+    const dotLast = s.lastIndexOf('.');
+    const lastSepIsComma = commaLast > dotLast;
+    if (lastSepIsComma) {
+      // Binlik: '.'
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+      // Binlik: ','
+      s = s.replace(/,/g, '');
+    }
+  } else if (s.includes(',')) {
+    // Tek ayraç ',' ise ondalık olarak ele al
+    s = s.replace(/\./g, '');
+    s = s.replace(',', '.');
+  } else {
+    // Tek ayraç '.' ise ondalık olarak ele al, binlik ',' varsa temizle
+    s = s.replace(/,/g, '');
+  }
+  // Geçersiz karakterleri temizle (rakam, nokta, eksi işareti dışındakiler)
+  s = s.replace(/[^0-9.\-]/g, '');
+  // Birden fazla nokta varsa sonuncuyu ondalık olacak şekilde birleştir
+  const parts = s.split('.');
+  if (parts.length > 2) {
+    const last = parts.pop();
+    s = parts.join('') + (last ? '.' + last : '');
+  }
+  if (!s || s === '.' || s === '-' || s === '-.') return undefined;
+  return s;
 }
 
 function toStockNumber(val: any): number | undefined {
