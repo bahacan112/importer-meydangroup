@@ -22,7 +22,7 @@ export default function TestImportPage() {
   // Toplu test alanları
   const [filePath, setFilePath] = useState<string>("uploads/system1.json");
   const [limit, setLimit] = useState<number | "">(50);
-  const [perItemDelayMs, setPerItemDelayMs] = useState<number | "">(500);
+  const [perItemDelayMs, setPerItemDelayMs] = useState<number | "">(0);
   const [processDirection, setProcessDirection] = useState<"asc" | "desc">("asc");
   const [batchDoCreateNew, setBatchDoCreateNew] = useState<boolean>(true);
   const [batchDoUpdateExisting, setBatchDoUpdateExisting] = useState<boolean>(true);
