@@ -103,40 +103,51 @@ export async function POST(req: NextRequest) {
       let raw: any[] = [];
       let savedFilename: string | undefined;
 
-      if (filePath) {
-        // Dosyadan çalış
+      // Tek ürün testinde dosya yolu verilmişse, dosyadan yalnızca bu SKU'yu eşleştirerek ilerleyelim
+      if (manualSku && filePath) {
         const safeRel = filePath.replace(/^\\+|^\/+/, "");
         const absolute = path.join(process.cwd(), "public", safeRel);
         const data = await fs.readFile(absolute, "utf-8");
         raw = JSON.parse(data);
-        await write({ type: "info", message: `Dosyadan senkronizasyon: ${safeRel}` });
-      } else {
-        // API'den çek, önce JSON'a kaydet
-        if (!apiUrl) throw new Error("API URL gerekli");
-        raw = await fetchNewSystemProducts(apiUrl);
-        const ts = new Date();
-        const y = ts.getFullYear();
-        const m = String(ts.getMonth() + 1).padStart(2, "0");
-        const d = String(ts.getDate()).padStart(2, "0");
-        const hh = String(ts.getHours()).padStart(2, "0");
-        const mm = String(ts.getMinutes()).padStart(2, "0");
-        const ss = String(ts.getSeconds()).padStart(2, "0");
-        const filename = `new-system-${y}${m}${d}-${hh}${mm}${ss}.json`;
-        const abs = path.join(uploadsDir, filename);
-        await fs.writeFile(abs, JSON.stringify(raw, null, 2), "utf-8");
-        savedFilename = path.join("uploads", "new-system", filename).replace(/\\/g, "/");
+        await write({ type: "info", message: `Tek ürün modu: dosyadan senkronizasyon (${safeRel})` });
+      } else if (!manualSku) {
+        if (filePath) {
+          // Dosyadan çalış
+          const safeRel = filePath.replace(/^\\+|^\/+/, "");
+          const absolute = path.join(process.cwd(), "public", safeRel);
+          const data = await fs.readFile(absolute, "utf-8");
+          raw = JSON.parse(data);
+          await write({ type: "info", message: `Dosyadan senkronizasyon: ${safeRel}` });
+        } else {
+          // API'den çek, önce JSON'a kaydet
+          if (!apiUrl) throw new Error("API URL gerekli");
+          raw = await fetchNewSystemProducts(apiUrl);
+          const ts = new Date();
+          const y = ts.getFullYear();
+          const m = String(ts.getMonth() + 1).padStart(2, "0");
+          const d = String(ts.getDate()).padStart(2, "0");
+          const hh = String(ts.getHours()).padStart(2, "0");
+          const mm = String(ts.getMinutes()).padStart(2, "0");
+          const ss = String(ts.getSeconds()).padStart(2, "0");
+          const filename = `new-system-${y}${m}${d}-${hh}${mm}${ss}.json`;
+          const abs = path.join(uploadsDir, filename);
+          await fs.writeFile(abs, JSON.stringify(raw, null, 2), "utf-8");
+          savedFilename = path.join("uploads", "new-system", filename).replace(/\\/g, "/");
 
-        // Eski JSON'ları sil (aynı klasördeki .json dosyaları)
-        try {
-          const entries = await fs.readdir(uploadsDir, { withFileTypes: true });
-          for (const e of entries) {
-            if (e.isFile() && e.name.endsWith(".json") && e.name !== filename) {
-              await fs.unlink(path.join(uploadsDir, e.name)).catch(() => {});
+          // Eski JSON'ları sil (aynı klasördeki .json dosyaları)
+          try {
+            const entries = await fs.readdir(uploadsDir, { withFileTypes: true });
+            for (const e of entries) {
+              if (e.isFile() && e.name.endsWith(".json") && e.name !== filename) {
+                await fs.unlink(path.join(uploadsDir, e.name)).catch(() => {});
+              }
             }
-          }
-        } catch {}
+          } catch {}
 
-        await write({ type: "saved_file", file: savedFilename, count: raw.length });
+          await write({ type: "saved_file", file: savedFilename, count: raw.length });
+        }
+      } else {
+        await write({ type: "info", message: "Manuel tek ürün modu: Dosya/API verisi çekilmeden işlenecek" });
       }
 
       // Dosyadan okunmuş veriyi de şema ile doğrula; geçersiz kayıtları dışla
@@ -154,9 +165,49 @@ export async function POST(req: NextRequest) {
         });
       } catch {}
 
-      // Eğer manuel tek ürün istendiyse, girişlerden tek ürün oluştur
-      let toImportAll = manualSku
-        ? [{
+      // İçe aktarım listesi: tek ürün modu + dosya yolu varsa eşleşen kaydı haritalayıp kullan
+      let toImportAll: any[] = [];
+      if (manualSku) {
+        // Dosyadan arama istenmişse, önce dosya verisinden eşleşen kaydı bul
+        if (filePath && (validRaw.length || raw.length)) {
+          const source = (validRaw.length ? validRaw : raw);
+          const match = source.find((r: any) => r && String(r.KOD) === manualSku);
+          if (match) {
+            const mapped = mapNewSystemToProducts([match], imageBaseUrl);
+            let p = mapped[0];
+            // Manuel override'lar
+            if (manualName) p.name = manualName;
+            if (manualRegularPrice) p.regular_price = manualRegularPrice;
+            if (manualSalePrice) p.sale_price = manualSalePrice;
+            if (manualStockQuantity !== undefined && !Number.isNaN(manualStockQuantity)) {
+              p.stock_quantity = manualStockQuantity;
+              p.manage_stock = manualManageStock ?? true;
+            } else if (manualManageStock !== undefined) {
+              p.manage_stock = manualManageStock;
+            }
+            toImportAll = [p];
+            await write({ type: "info", message: "Tek ürün: dosyadan eşleşen kayıt ile işlenecek", sku: manualSku });
+          } else {
+            // Bulunamazsa manuel alanlarla tekil kayıt oluştur
+            toImportAll = [{
+              sku: manualSku,
+              name: manualName || manualSku,
+              description: undefined,
+              short_description: undefined,
+              regular_price: manualRegularPrice,
+              sale_price: manualSalePrice,
+              stock_quantity: (manualStockQuantity !== undefined && !Number.isNaN(manualStockQuantity)) ? manualStockQuantity : undefined,
+              manage_stock: manualManageStock ?? ((manualStockQuantity !== undefined && !Number.isNaN(manualStockQuantity)) ? true : undefined),
+              status: "publish",
+              images: undefined,
+              categories: undefined,
+              tags: undefined,
+            }];
+            await write({ type: "info", message: "Tek ürün: dosyada bulunamadı, manuel alanlarla işlenecek", sku: manualSku });
+          }
+        } else {
+          // Dosya verilmemişse manuel alanlarla tekil kayıt
+          toImportAll = [{
             sku: manualSku,
             name: manualName || manualSku,
             description: undefined,
@@ -169,10 +220,11 @@ export async function POST(req: NextRequest) {
             images: undefined,
             categories: undefined,
             tags: undefined,
-          }]
-        : mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
-      if (manualSku) {
-        await write({ type: "info", message: "Manuel tek ürün testi", sku: manualSku });
+          }];
+          await write({ type: "info", message: "Tek ürün: manuel alanlarla işlenecek", sku: manualSku });
+        }
+      } else {
+        toImportAll = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
       }
       // İstenirse dosyanın sonundan başlayarak işle (desc)
       if ((options.processDirection || "asc") === "desc") {
