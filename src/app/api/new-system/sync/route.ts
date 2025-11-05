@@ -34,6 +34,7 @@ type SyncOptions = {
   mediaMode?: "upload" | "prefer_existing_by_filename" | "none";
   limit?: number;
   perItemDelayMs?: number;
+  processDirection?: "asc" | "desc"; // dosya başından mı sonundan mı?
 };
 
 function line(obj: any) {
@@ -43,7 +44,8 @@ function line(obj: any) {
 // Çakışma tespiti (SKU zaten işlemde/in-progress)
 function isProcessingConflict(msg: string) {
   const m = String(msg || "").toLowerCase();
-  return /already|işleniyor|processing|claimed|in-progress/.test(m);
+  // Bazı hata metinleri JSON içinde unicode escape ile gelebilir: i\u015fleniyor
+  return /already|işleniyor|i\\u015fleniyor|processing|claimed|in-progress|zaten/.test(m);
 }
 
 export async function POST(req: NextRequest) {
@@ -77,6 +79,7 @@ export async function POST(req: NextRequest) {
         mediaMode: (formData.get("mediaMode")?.toString() as any) || "prefer_existing_by_filename",
         limit: formData.get("limit") ? Number(formData.get("limit")) : undefined,
         perItemDelayMs: formData.get("perItemDelayMs") ? Number(formData.get("perItemDelayMs")) : undefined,
+        processDirection: (formData.get("processDirection")?.toString().toLowerCase() as any) || "asc",
       };
       await write({ type: "start", at: startTs, message: "Senkronizasyon başlatıldı" });
       // Teşhis: WooCommerce base URL'i logla (anahtarı/sırrı loglamıyoruz)
@@ -143,7 +146,14 @@ export async function POST(req: NextRequest) {
         });
       } catch {}
 
-      const toImportAll = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
+      let toImportAll = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
+      // İstenirse dosyanın sonundan başlayarak işle (desc)
+      if ((options.processDirection || "asc") === "desc") {
+        toImportAll = toImportAll.reverse();
+        await write({ type: "order_applied", direction: "desc" });
+      } else {
+        await write({ type: "order_applied", direction: "asc" });
+      }
       // Yinelenen SKU’ları tekilleştirerek concurrent create denemelerini önle
       const seen = new Set<string>();
       let toImport = toImportAll.filter((p) => {
