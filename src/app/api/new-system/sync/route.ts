@@ -40,6 +40,12 @@ function line(obj: any) {
   return JSON.stringify(obj) + "\n";
 }
 
+// Çakışma tespiti (SKU zaten işlemde/in-progress)
+function isProcessingConflict(msg: string) {
+  const m = String(msg || "").toLowerCase();
+  return /already|işleniyor|processing|claimed|in-progress/.test(m);
+}
+
 export async function POST(req: NextRequest) {
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -355,24 +361,30 @@ export async function POST(req: NextRequest) {
             if (!doUpdateExisting) {
               await write({ type: "skip_update", sku: prod.sku, name: prod.name });
             } else if (updateStockOnly) {
-              const payloadStock: any = {
-                manage_stock: prod.manage_stock ?? false,
-                stock_quantity: prod.stock_quantity,
-              };
-              await updateProduct(current.id, payloadStock);
-              updated++;
-              await write({ type: "updated_stock", sku: prod.sku, id: current.id, name: prod.name });
+              const payloadStock: any = {};
+              if (prod.manage_stock !== undefined) payloadStock.manage_stock = prod.manage_stock;
+              if (prod.stock_quantity !== undefined) payloadStock.stock_quantity = prod.stock_quantity;
+              if (Object.keys(payloadStock).length > 0) {
+                await updateProduct(current.id, payloadStock);
+                updated++;
+                await write({ type: "updated_stock", sku: prod.sku, id: current.id, name: prod.name });
+              } else {
+                await write({ type: "skip_update_no_fields", sku: prod.sku, id: current.id, name: prod.name });
+              }
             } else {
               // Varsayılan davranış: mevcut üründe sadece stok ve fiyat güncelle
-              const payloadSP: any = {
-                regular_price,
-                sale_price,
-                manage_stock: prod.manage_stock ?? false,
-                stock_quantity: prod.stock_quantity,
-              };
-              await updateProduct(current.id, payloadSP);
-              updated++;
-              await write({ type: "updated_stock_price", sku: prod.sku, id: current.id, name: prod.name });
+              const payloadSP: any = {};
+              if (regular_price !== undefined) payloadSP.regular_price = regular_price;
+              if (sale_price !== undefined) payloadSP.sale_price = sale_price;
+              if (prod.manage_stock !== undefined) payloadSP.manage_stock = prod.manage_stock;
+              if (prod.stock_quantity !== undefined) payloadSP.stock_quantity = prod.stock_quantity;
+              if (Object.keys(payloadSP).length > 0) {
+                await updateProduct(current.id, payloadSP);
+                updated++;
+                await write({ type: "updated_stock_price", sku: prod.sku, id: current.id, name: prod.name });
+              } else {
+                await write({ type: "skip_update_no_fields", sku: prod.sku, id: current.id, name: prod.name });
+              }
             }
           } else {
             if (updateStockOnly || updateStockAndPriceOnly || !doCreateNew) {
@@ -416,19 +428,18 @@ export async function POST(req: NextRequest) {
                   delete withoutImages.images;
                   await write({ type: "image_upload_failed", sku: prod.sku, error: emsg });
                   createdProd = await createProduct(withoutImages);
-                } else if (/already|i\u015fleniyor|processing/i.test(emsg)) {
+                } else if (isProcessingConflict(emsg)) {
                   // WooCommerce aynı SKU için create işlemini arka planda yürütüyor olabilir.
                   // Ürün oluşmuşsa stok/fiyat güncelleyip devam edelim; oluşmadıysa çakışmayı raporlayıp sonraki ürüne geçelim.
                   try {
                     const maybe = await getProductBySku(prod.sku);
                     if (maybe?.id) {
                       existingBySku.set(prod.sku, { id: maybe.id, sku: prod.sku } as any);
-                      const payloadSP: any = {
-                        regular_price,
-                        sale_price,
-                        manage_stock: prod.manage_stock ?? false,
-                        stock_quantity: prod.stock_quantity,
-                      };
+                      const payloadSP: any = {};
+                      if (regular_price !== undefined) payloadSP.regular_price = regular_price;
+                      if (sale_price !== undefined) payloadSP.sale_price = sale_price;
+                      if (prod.manage_stock !== undefined) payloadSP.manage_stock = prod.manage_stock;
+                      if (prod.stock_quantity !== undefined) payloadSP.stock_quantity = prod.stock_quantity;
                       await updateProduct(maybe.id, payloadSP);
                       await write({ type: "updated_stock_price", sku: prod.sku, id: maybe.id, name: prod.name });
                       createdProd = maybe as any;
@@ -483,7 +494,7 @@ export async function POST(req: NextRequest) {
         } catch (e: any) {
           const msg = e?.message || String(e);
           // Woo özel hata: "stok kodu ... zaten işleniyor" durumunda create çakışması var; uyarı verip devam edelim
-          if (msg.includes("zaten i") || msg.toLowerCase().includes("processing")) {
+          if (isProcessingConflict(msg)) {
             await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: msg });
           } else {
             await write({ type: "error", sku: prod.sku, name: prod.name, error: msg });
@@ -530,7 +541,7 @@ export async function POST(req: NextRequest) {
             } catch (e2: any) {
               const msg2 = e2?.message || String(e2);
               // "zaten işleniyor" türü hatalarda bir sonraki denemeye geç, diğer hatalarda bırak
-              if (/already|i\u015fleniyor|processing/i.test(msg2)) {
+              if (isProcessingConflict(msg2)) {
                 await write({ type: "retry_conflict_deferred", sku: item.sku, name: item.name, attempt, waitMs, error: msg2 });
                 continue;
               } else {
