@@ -9,6 +9,7 @@ import { toast } from "sonner";
 export default function TestImportPage() {
   // Tek ürün test alanları
   const [manualSku, setManualSku] = useState<string>("");
+  const [singleFilePath, setSingleFilePath] = useState<string>("");
   const [manualName, setManualName] = useState<string>("");
   const [manualStockQuantity, setManualStockQuantity] = useState<number | "">("");
   const [manualRegularPrice, setManualRegularPrice] = useState<string>("");
@@ -85,7 +86,7 @@ export default function TestImportPage() {
   async function onRunSingle() {
     try {
       if (!manualSku) {
-        toast.error("SKU gerekli");
+        toast.error("KOD gerekli");
         return;
       }
       setLoading(true);
@@ -94,6 +95,7 @@ export default function TestImportPage() {
       setProcessed(0); setTotal(0); setElapsedMs(0); setSpeed(0);
       const fd = new FormData();
       fd.append("manualSku", manualSku);
+      if (singleFilePath) fd.append("file_path", singleFilePath);
       if (manualName) fd.append("manualName", manualName);
       if (manualRegularPrice) fd.append("manualRegularPrice", manualRegularPrice);
       if (manualSalePrice) fd.append("manualSalePrice", manualSalePrice);
@@ -165,8 +167,12 @@ export default function TestImportPage() {
           <div className="font-medium">Tek Ürün Testi (SKU ile Oluştur/Güncelle)</div>
           <div className="grid md:grid-cols-2 gap-3">
             <div>
-              <label className="text-sm">SKU</label>
+              <label className="text-sm">KOD (SKU = 'kaya-' + KOD)</label>
               <Input value={manualSku} onChange={(e) => setManualSku(e.target.value)} placeholder="Örn: 000-1400" />
+            </div>
+            <div>
+              <label className="text-sm">Dosya yolu (public altında, opsiyonel)</label>
+              <Input value={singleFilePath} onChange={(e) => setSingleFilePath(e.target.value)} placeholder="uploads/new-system/xxx.json" />
             </div>
             <div>
               <label className="text-sm">Ad (isteğe bağlı)</label>

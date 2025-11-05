@@ -96,7 +96,8 @@ export async function fetchNewSystemProducts(apiUrl: string): Promise<NewSystemR
 export function mapNewSystemToProducts(raw: NewSystemRawProduct[], imageBaseUrl?: string): ParsedProduct[] {
   const normBase = imageBaseUrl ? imageBaseUrl.replace(/\/$/, "") : undefined;
   return raw.map((p) => {
-    const sku = String(p.KOD);
+    // SKU kuralı: kullanıcı talebine göre SKU = "kaya-" + KOD
+    const sku = `kaya-${String(p.KOD)}`;
     const baseName = String(p.STOK_ADI);
     const oem = p.OEM ? String(p.OEM).trim() : "";
     const name = oem && oem.length > 0 ? `${oem} - ${baseName}` : baseName;

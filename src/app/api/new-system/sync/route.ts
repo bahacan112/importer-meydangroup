@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
           } else {
             // Bulunamazsa manuel alanlarla tekil kayıt oluştur
             toImportAll = [{
-              sku: manualSku,
+              sku: `kaya-${manualSku}`,
               name: manualName || manualSku,
               description: undefined,
               short_description: undefined,
@@ -208,7 +208,7 @@ export async function POST(req: NextRequest) {
         } else {
           // Dosya verilmemişse manuel alanlarla tekil kayıt
           toImportAll = [{
-            sku: manualSku,
+            sku: `kaya-${manualSku}`,
             name: manualName || manualSku,
             description: undefined,
             short_description: undefined,
@@ -288,10 +288,10 @@ export async function POST(req: NextRequest) {
         return out;
       }
 
-      // Hız için raw veriyi SKU ile eşleştir
+      // Hız için raw veriyi SKU ile eşleştir (prefixli SKU: kaya-{KOD})
       const rawBySku = new Map<string, any>();
       (validRaw.length ? validRaw : raw).forEach((r: any) => {
-        if (r && r.KOD) rawBySku.set(String(r.KOD), r);
+        if (r && r.KOD) rawBySku.set(`kaya-${String(r.KOD)}`, r);
       });
 
   async function ensureCategoryChain(names: string[]): Promise<number[]> {
