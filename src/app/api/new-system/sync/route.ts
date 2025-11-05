@@ -66,6 +66,14 @@ export async function POST(req: NextRequest) {
       const apiUrl = String(formData.get("api_url") || "");
       const imageBaseUrl = String(formData.get("image_base_url") || "");
       const filePath = String(formData.get("file_path") || "");
+      // Manuel tek ürün test modu için alanlar
+      const manualSku = String(formData.get("manualSku") || "");
+      const manualName = formData.get("manualName") ? String(formData.get("manualName")) : undefined;
+      const manualRegularPrice = formData.get("manualRegularPrice") ? String(formData.get("manualRegularPrice")) : undefined;
+      const manualSalePrice = formData.get("manualSalePrice") ? String(formData.get("manualSalePrice")) : undefined;
+      const manualStockQuantityRaw = formData.get("manualStockQuantity");
+      const manualStockQuantity = manualStockQuantityRaw != null ? Number(String(manualStockQuantityRaw)) : undefined;
+      const manualManageStock = formData.get("manualManageStock") ? true : undefined;
       const options: SyncOptions = {
         deleteMissing: !!formData.get("deleteMissing"),
         doCreateNew: !!formData.get("doCreateNew"),
@@ -146,7 +154,26 @@ export async function POST(req: NextRequest) {
         });
       } catch {}
 
-      let toImportAll = mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
+      // Eğer manuel tek ürün istendiyse, girişlerden tek ürün oluştur
+      let toImportAll = manualSku
+        ? [{
+            sku: manualSku,
+            name: manualName || manualSku,
+            description: undefined,
+            short_description: undefined,
+            regular_price: manualRegularPrice,
+            sale_price: manualSalePrice,
+            stock_quantity: (manualStockQuantity !== undefined && !Number.isNaN(manualStockQuantity)) ? manualStockQuantity : undefined,
+            manage_stock: manualManageStock ?? ((manualStockQuantity !== undefined && !Number.isNaN(manualStockQuantity)) ? true : undefined),
+            status: "publish",
+            images: undefined,
+            categories: undefined,
+            tags: undefined,
+          }]
+        : mapNewSystemToProducts(validRaw.length ? validRaw : raw, imageBaseUrl);
+      if (manualSku) {
+        await write({ type: "info", message: "Manuel tek ürün testi", sku: manualSku });
+      }
       // İstenirse dosyanın sonundan başlayarak işle (desc)
       if ((options.processDirection || "asc") === "desc") {
         toImportAll = toImportAll.reverse();
