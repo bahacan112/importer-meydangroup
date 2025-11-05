@@ -35,6 +35,7 @@ type SyncOptions = {
   limit?: number;
   perItemDelayMs?: number;
   processDirection?: "asc" | "desc"; // dosya başından mı sonundan mı?
+  parallelUpdates?: boolean; // güncellemeleri baş ve sondan paralel işle
 };
 
 function line(obj: any) {
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
         limit: formData.get("limit") ? Number(formData.get("limit")) : undefined,
         perItemDelayMs: formData.get("perItemDelayMs") ? Number(formData.get("perItemDelayMs")) : undefined,
         processDirection: (formData.get("processDirection")?.toString().toLowerCase() as any) || "asc",
+        parallelUpdates: !!formData.get("parallelUpdates"),
       };
       await write({ type: "start", at: startTs, message: "Senkronizasyon başlatıldı" });
       // Teşhis: WooCommerce base URL'i logla (anahtarı/sırrı loglamıyoruz)
@@ -428,25 +430,38 @@ export async function POST(req: NextRequest) {
         return out.length ? out : undefined;
       }
 
-      for (const prod of toImport) {
-        if (options.perItemDelayMs && options.perItemDelayMs > 0) {
-          await new Promise((r) => setTimeout(r, options.perItemDelayMs));
-        }
-        try {
-          const current = existingBySku.get(prod.sku);
-          // Kar oranı uygula
-          let regular_price = prod.regular_price;
-          let sale_price = prod.sale_price;
-          if (applyMarginOn === "regular") {
-            regular_price = applyMargin(regular_price) ?? regular_price;
-          } else if (applyMarginOn === "sale") {
-            sale_price = applyMargin(sale_price) ?? sale_price;
-          } else {
-            regular_price = applyMargin(regular_price) ?? regular_price;
-            sale_price = applyMargin(sale_price) ?? sale_price;
-          }
+      if (options.parallelUpdates && doUpdateExisting) {
+        // Güncelleme gerektiren kayıtları iki parçaya böl: baştan ve sondan
+        const updatesOnly = toImport.filter((p) => {
+          const cur = existingBySku.get(p.sku);
+          return !!cur?.id;
+        });
 
-          if (current?.id) {
+        const mid = Math.ceil(updatesOnly.length / 2);
+        const leftPart = updatesOnly.slice(0, mid);
+        const rightPart = updatesOnly.slice(mid).reverse();
+
+        async function processUpdateItem(prod: any) {
+          if (options.perItemDelayMs && options.perItemDelayMs > 0) {
+            await new Promise((r) => setTimeout(r, options.perItemDelayMs));
+          }
+          try {
+            const current = existingBySku.get(prod.sku);
+            let regular_price = prod.regular_price;
+            let sale_price = prod.sale_price;
+            if (applyMarginOn === "regular") {
+              regular_price = applyMargin(regular_price) ?? regular_price;
+            } else if (applyMarginOn === "sale") {
+              sale_price = applyMargin(sale_price) ?? sale_price;
+            } else {
+              regular_price = applyMargin(regular_price) ?? regular_price;
+              sale_price = applyMargin(sale_price) ?? sale_price;
+            }
+
+            if (!current?.id) {
+              // Bu parça yalnızca güncellemeleri işler; oluşturma ayrı turda yapılacak
+              return;
+            }
             if (!doUpdateExisting) {
               await write({ type: "skip_update", sku: prod.sku, name: prod.name });
             } else if (updateStockOnly) {
@@ -461,7 +476,6 @@ export async function POST(req: NextRequest) {
                 await write({ type: "skip_update_no_fields", sku: prod.sku, id: current.id, name: prod.name });
               }
             } else {
-              // Varsayılan davranış: mevcut üründe sadece stok ve fiyat güncelle
               const payloadSP: any = {};
               if (regular_price !== undefined) payloadSP.regular_price = regular_price;
               if (sale_price !== undefined) payloadSP.sale_price = sale_price;
@@ -475,21 +489,55 @@ export async function POST(req: NextRequest) {
                 await write({ type: "skip_update_no_fields", sku: prod.sku, id: current.id, name: prod.name });
               }
             }
-          } else {
+            processed++;
+            const elapsedMs = Date.now() - startTs;
+            const speed = elapsedMs > 0 ? (processed / (elapsedMs / 1000)) : 0;
+            await write({ type: "progress", processed, total: toImport.length, elapsedMs, speed });
+          } catch (e: any) {
+            const msg = e?.message || String(e);
+            if (isProcessingConflict(msg)) {
+              await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: msg });
+            } else {
+              await write({ type: "error", sku: prod.sku, name: prod.name, error: msg });
+            }
+          }
+        }
+
+        await Promise.all([
+          (async () => { for (const p of leftPart) { await processUpdateItem(p); } })(),
+          (async () => { for (const p of rightPart) { await processUpdateItem(p); } })(),
+        ]);
+
+        // Ardından, oluşturma gerektiren kayıtlar için tekil tur (orijinal mantık)
+        const createsOnly = toImport.filter((p) => {
+          const cur = existingBySku.get(p.sku);
+          return !cur?.id;
+        });
+
+        for (const prod of createsOnly) {
+          if (options.perItemDelayMs && options.perItemDelayMs > 0) {
+            await new Promise((r) => setTimeout(r, options.perItemDelayMs));
+          }
+          try {
+            // Kar oranı uygula
+            let regular_price = prod.regular_price;
+            let sale_price = prod.sale_price;
+            if (applyMarginOn === "regular") {
+              regular_price = applyMargin(regular_price) ?? regular_price;
+            } else if (applyMarginOn === "sale") {
+              sale_price = applyMargin(sale_price) ?? sale_price;
+            } else {
+              regular_price = applyMargin(regular_price) ?? regular_price;
+              sale_price = applyMargin(sale_price) ?? sale_price;
+            }
+
             if (updateStockOnly || updateStockAndPriceOnly || !doCreateNew) {
               await write({ type: "skip_create", sku: prod.sku, name: prod.name });
             } else {
               const rawItem = rawBySku.get(prod.sku);
-              // Kullanıcı talebi: kategori zinciri MARKA > MODEL > ALT_GRUP
-              const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
-                .map((x: any) => (x ? String(x) : ""));
+              const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP].map((x: any) => (x ? String(x) : ""));
               const catIds = await ensureCategoryChain(chain);
-              const tagNames = sanitizeTagNames([
-                rawItem?.OEM,
-                rawItem?.MARKA,
-                rawItem?.MODEL,
-                // Ürün adına göre otomatik tag oluşturmayı kapattık (çok uzun ve benzersiz isimler oluşturuyor)
-              ].map((x: any) => (x ? String(x) : "")));
+              const tagNames = sanitizeTagNames([rawItem?.OEM, rawItem?.MARKA, rawItem?.MODEL].map((x: any) => (x ? String(x) : "")));
               const tagIds = await ensureTags(tagNames);
               const payloadCreate: any = {
                 name: prod.name,
@@ -518,8 +566,6 @@ export async function POST(req: NextRequest) {
                   await write({ type: "image_upload_failed", sku: prod.sku, error: emsg });
                   createdProd = await createProduct(withoutImages);
                 } else if (isProcessingConflict(emsg)) {
-                  // WooCommerce aynı SKU için create işlemini arka planda yürütüyor olabilir.
-                  // Ürün oluşmuşsa stok/fiyat güncelleyip devam edelim; oluşmadıysa çakışmayı raporlayıp sonraki ürüne geçelim.
                   try {
                     const maybe = await getProductBySku(prod.sku);
                     if (maybe?.id) {
@@ -533,7 +579,6 @@ export async function POST(req: NextRequest) {
                       await write({ type: "updated_stock_price", sku: prod.sku, id: maybe.id, name: prod.name });
                       createdProd = maybe as any;
                     } else {
-                      // Kısa bir bekleme sonrası tek seferlik yeniden dene (görselsiz) 
                       await new Promise((r) => setTimeout(r, 500));
                       try {
                         const withoutImages = { ...payloadCreate };
@@ -541,7 +586,6 @@ export async function POST(req: NextRequest) {
                         createdProd = await createProduct(withoutImages);
                       } catch (e2: any) {
                         await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
-                        // İkinci tur için ertele
                         deferredCreates.push({
                           sku: prod.sku,
                           name: prod.name,
@@ -575,18 +619,181 @@ export async function POST(req: NextRequest) {
                 await write({ type: "created_product", sku: prod.sku, id: createdProd.id, name: prod.name });
               }
             }
+            processed++;
+            const elapsedMs = Date.now() - startTs;
+            const speed = elapsedMs > 0 ? (processed / (elapsedMs / 1000)) : 0;
+            await write({ type: "progress", processed, total: toImport.length, elapsedMs, speed });
+          } catch (e: any) {
+            const msg = e?.message || String(e);
+            if (isProcessingConflict(msg)) {
+              await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: msg });
+            } else {
+              await write({ type: "error", sku: prod.sku, name: prod.name, error: msg });
+            }
           }
-          processed++;
-          const elapsedMs = Date.now() - startTs;
-          const speed = elapsedMs > 0 ? (processed / (elapsedMs / 1000)) : 0;
-          await write({ type: "progress", processed, total: toImport.length, elapsedMs, speed });
-        } catch (e: any) {
-          const msg = e?.message || String(e);
-          // Woo özel hata: "stok kodu ... zaten işleniyor" durumunda create çakışması var; uyarı verip devam edelim
-          if (isProcessingConflict(msg)) {
-            await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: msg });
-          } else {
-            await write({ type: "error", sku: prod.sku, name: prod.name, error: msg });
+        }
+      } else {
+        // Orijinal tek iş parçacıklı akış
+        for (const prod of toImport) {
+          if (options.perItemDelayMs && options.perItemDelayMs > 0) {
+            await new Promise((r) => setTimeout(r, options.perItemDelayMs));
+          }
+          try {
+            const current = existingBySku.get(prod.sku);
+            // Kar oranı uygula
+            let regular_price = prod.regular_price;
+            let sale_price = prod.sale_price;
+            if (applyMarginOn === "regular") {
+              regular_price = applyMargin(regular_price) ?? regular_price;
+            } else if (applyMarginOn === "sale") {
+              sale_price = applyMargin(sale_price) ?? sale_price;
+            } else {
+              regular_price = applyMargin(regular_price) ?? regular_price;
+              sale_price = applyMargin(sale_price) ?? sale_price;
+            }
+
+            if (current?.id) {
+              if (!doUpdateExisting) {
+                await write({ type: "skip_update", sku: prod.sku, name: prod.name });
+              } else if (updateStockOnly) {
+                const payloadStock: any = {};
+                if (prod.manage_stock !== undefined) payloadStock.manage_stock = prod.manage_stock;
+                if (prod.stock_quantity !== undefined) payloadStock.stock_quantity = prod.stock_quantity;
+                if (Object.keys(payloadStock).length > 0) {
+                  await updateProduct(current.id, payloadStock);
+                  updated++;
+                  await write({ type: "updated_stock", sku: prod.sku, id: current.id, name: prod.name });
+                } else {
+                  await write({ type: "skip_update_no_fields", sku: prod.sku, id: current.id, name: prod.name });
+                }
+              } else {
+                // Varsayılan davranış: mevcut üründe sadece stok ve fiyat güncelle
+                const payloadSP: any = {};
+                if (regular_price !== undefined) payloadSP.regular_price = regular_price;
+                if (sale_price !== undefined) payloadSP.sale_price = sale_price;
+                if (prod.manage_stock !== undefined) payloadSP.manage_stock = prod.manage_stock;
+                if (prod.stock_quantity !== undefined) payloadSP.stock_quantity = prod.stock_quantity;
+                if (Object.keys(payloadSP).length > 0) {
+                  await updateProduct(current.id, payloadSP);
+                  updated++;
+                  await write({ type: "updated_stock_price", sku: prod.sku, id: current.id, name: prod.name });
+                } else {
+                  await write({ type: "skip_update_no_fields", sku: prod.sku, id: current.id, name: prod.name });
+                }
+              }
+            } else {
+              if (updateStockOnly || updateStockAndPriceOnly || !doCreateNew) {
+                await write({ type: "skip_create", sku: prod.sku, name: prod.name });
+              } else {
+                const rawItem = rawBySku.get(prod.sku);
+                // Kullanıcı talebi: kategori zinciri MARKA > MODEL > ALT_GRUP
+                const chain = [rawItem?.MARKA, rawItem?.MODEL, rawItem?.ALT_GRUP]
+                  .map((x: any) => (x ? String(x) : ""));
+                const catIds = await ensureCategoryChain(chain);
+                const tagNames = sanitizeTagNames([
+                  rawItem?.OEM,
+                  rawItem?.MARKA,
+                  rawItem?.MODEL,
+                  // Ürün adına göre otomatik tag oluşturmayı kapattık (çok uzun ve benzersiz isimler oluşturuyor)
+                ].map((x: any) => (x ? String(x) : "")));
+                const tagIds = await ensureTags(tagNames);
+                const payloadCreate: any = {
+                  name: prod.name,
+                  type: "simple",
+                  description: prod.description,
+                  short_description: prod.short_description,
+                  regular_price,
+                  sale_price,
+                  sku: prod.sku,
+                  manage_stock: prod.manage_stock ?? false,
+                  stock_quantity: prod.stock_quantity,
+                  status: prod.status ?? "publish",
+                  images: await resolveImages(prod.images as any, options.mediaMode || "prefer_existing_by_filename"),
+                  categories: catIds.length ? catIds.map((id) => ({ id })) : undefined,
+                  tags: tagIds.length ? tagIds.map((id) => ({ id })) : undefined,
+                };
+                if (!payloadCreate.images) delete payloadCreate.images;
+                let createdProd;
+                try {
+                  createdProd = await createProduct(payloadCreate);
+                } catch (e: any) {
+                  const emsg = e?.message || String(e);
+                  if (payloadCreate.images && /image|görsel|media|forbidden|upload/i.test(emsg)) {
+                    const withoutImages = { ...payloadCreate };
+                    delete withoutImages.images;
+                    await write({ type: "image_upload_failed", sku: prod.sku, error: emsg });
+                    createdProd = await createProduct(withoutImages);
+                  } else if (isProcessingConflict(emsg)) {
+                    // WooCommerce aynı SKU için create işlemini arka planda yürütüyor olabilir.
+                    // Ürün oluşmuşsa stok/fiyat güncelleyip devam edelim; oluşmadıysa çakışmayı raporlayıp sonraki ürüne geçelim.
+                    try {
+                      const maybe = await getProductBySku(prod.sku);
+                      if (maybe?.id) {
+                        existingBySku.set(prod.sku, { id: maybe.id, sku: prod.sku } as any);
+                        const payloadSP: any = {};
+                        if (regular_price !== undefined) payloadSP.regular_price = regular_price;
+                        if (sale_price !== undefined) payloadSP.sale_price = sale_price;
+                        if (prod.manage_stock !== undefined) payloadSP.manage_stock = prod.manage_stock;
+                        if (prod.stock_quantity !== undefined) payloadSP.stock_quantity = prod.stock_quantity;
+                        await updateProduct(maybe.id, payloadSP);
+                        await write({ type: "updated_stock_price", sku: prod.sku, id: maybe.id, name: prod.name });
+                        createdProd = maybe as any;
+                      } else {
+                        // Kısa bir bekleme sonrası tek seferlik yeniden dene (görselsiz) 
+                        await new Promise((r) => setTimeout(r, 500));
+                        try {
+                          const withoutImages = { ...payloadCreate };
+                          delete withoutImages.images;
+                          createdProd = await createProduct(withoutImages);
+                        } catch (e2: any) {
+                          await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                          // İkinci tur için ertele
+                          deferredCreates.push({
+                            sku: prod.sku,
+                            name: prod.name,
+                            payload: payloadCreate,
+                            regular_price,
+                            sale_price,
+                            stock_quantity: prod.stock_quantity,
+                            manage_stock: prod.manage_stock ?? false,
+                          });
+                        }
+                      }
+                    } catch (err: any) {
+                      await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: emsg });
+                      deferredCreates.push({
+                        sku: prod.sku,
+                        name: prod.name,
+                        payload: payloadCreate,
+                        regular_price,
+                        sale_price,
+                        stock_quantity: prod.stock_quantity,
+                        manage_stock: prod.manage_stock ?? false,
+                      });
+                    }
+                  } else {
+                    throw e;
+                  }
+                }
+                if (createdProd?.id) {
+                  existingBySku.set(prod.sku, { id: createdProd.id, sku: prod.sku } as any);
+                  created++;
+                  await write({ type: "created_product", sku: prod.sku, id: createdProd.id, name: prod.name });
+                }
+              }
+            }
+            processed++;
+            const elapsedMs = Date.now() - startTs;
+            const speed = elapsedMs > 0 ? (processed / (elapsedMs / 1000)) : 0;
+            await write({ type: "progress", processed, total: toImport.length, elapsedMs, speed });
+          } catch (e: any) {
+            const msg = e?.message || String(e);
+            // Woo özel hata: "stok kodu ... zaten işleniyor" durumunda create çakışması var; uyarı verip devam edelim
+            if (isProcessingConflict(msg)) {
+              await write({ type: "skip_conflict", sku: prod.sku, name: prod.name, error: msg });
+            } else {
+              await write({ type: "error", sku: prod.sku, name: prod.name, error: msg });
+            }
           }
         }
       }

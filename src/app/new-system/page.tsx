@@ -29,6 +29,7 @@ export default function NewSystemPage() {
   const [doUpdateExisting, setDoUpdateExisting] = useState(true);
   const [updateStockAndPriceOnly, setUpdateStockAndPriceOnly] = useState(false);
   const [updateImagesOnUpdate, setUpdateImagesOnUpdate] = useState(true);
+  const [parallelUpdates, setParallelUpdates] = useState<boolean>(false);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(0);
   const [applyMarginOn, setApplyMarginOn] = useState<"regular" | "sale" | "both">("regular");
   const [roundToInteger, setRoundToInteger] = useState<boolean>(true);
@@ -93,6 +94,8 @@ export default function NewSystemPage() {
       fd.append("deleteMissing", deleteMissing ? "1" : "");
       fd.append("doCreateNew", doCreateNew ? "1" : "");
       fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
+      if (parallelUpdates) fd.append("parallelUpdates", "1");
+      if (parallelUpdates) fd.append("parallelUpdates", "1");
       fd.append("updateStockAndPriceOnly", updateStockAndPriceOnly ? "1" : "");
       fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
       fd.append("profitMarginPercent", String(profitMarginPercent || 0));
@@ -278,6 +281,11 @@ export default function NewSystemPage() {
             <label htmlFor="updateImagesOnUpdate" className="text-sm">Fotoğrafları güncelle (mevcut ürünlerde)</label>
           </div>
 
+          <div className="flex items-center gap-2">
+            <input id="parallelUpdates" type="checkbox" checked={parallelUpdates} onChange={(e) => setParallelUpdates(e.target.checked)} />
+            <label htmlFor="parallelUpdates" className="text-sm">Güncellemelerde çift işlem (dosyanın başından ve sonundan)</label>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
             <div>
               <label className="text-sm">Kar oranı (%)</label>
@@ -306,6 +314,7 @@ export default function NewSystemPage() {
                 fd.append("image_base_url", imageBaseUrl);
                 fd.append("doCreateNew", doCreateNew ? "1" : "");
                 fd.append("doUpdateExisting", doUpdateExisting ? "1" : "");
+                if (parallelUpdates) fd.append("parallelUpdates", "1");
       fd.append("updateStockAndPriceOnly", updateStockAndPriceOnly ? "1" : "");
                 fd.append("updateImagesOnUpdate", updateImagesOnUpdate ? "1" : "");
                 fd.append("profitMarginPercent", String(profitMarginPercent || 0));
